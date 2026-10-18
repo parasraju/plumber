@@ -1,0 +1,475 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Plumber — Code Hygiene & Slop Inspector</title>
+  <meta name="description" content="Deterministic code hygiene and AI slop inspector for repositories. Spots leaked API keys, hallucinated packages, swallowed exceptions, and AI design clichés in seconds.">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/site.css">
+  <script src="/site.js" defer></script>
+</head>
+<body>
+
+<!-- Navigation Bar -->
+<header class="site-nav">
+  <div class="container nav-wrapper">
+    <a href="/" class="brand-title">
+      <svg class="brand-icon" viewBox="0 0 24 24"><path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm1 14.93V19a1 1 0 0 1-2 0v-2.07A8.005 8.005 0 0 1 4.07 10H6a1 1 0 0 1 0-2H4.07A8.005 8.005 0 0 1 11 3.07V5a1 1 0 0 1 2 0V3.07A8.005 8.005 0 0 1 19.93 10H18a1 1 0 0 1 0 2h1.93A8.005 8.005 0 0 1 13 16.93zM12 7a5 5 0 1 0 5 5 5 5 0 0 0-5-5z"/></svg>
+      plumber
+    </a>
+
+    <button class="mobile-nav-toggle" id="mobileNavToggle" type="button" aria-label="Toggle navigation menu" aria-expanded="false" aria-controls="navLinks">
+      <span class="hamburger-bar"></span>
+      <span class="hamburger-bar"></span>
+      <span class="hamburger-bar"></span>
+    </button>
+
+    <nav class="nav-links" id="navLinks">
+      <button type="button" class="nav-link" id="aboutTrigger">About</button>
+      <a class="nav-link" href="https://github.com" target="_blank" rel="noopener">GitHub</a>
+      <button type="button" class="nav-link" id="changelogTrigger">Changelog</button>
+      <button class="btn-utility" id="themeToggleBtn" type="button" aria-label="Toggle interface theme">
+        <span>Dark Mode</span>
+      </button>
+    </nav>
+  </div>
+</header>
+
+<main>
+  <!-- Hero Stage -->
+  <section class="hero-stage">
+    <!-- Ambient Scattered Meme GIFs (Scattered across wide hero canvas) -->
+    <div class="bg-gifs-container" aria-hidden="true">
+      <!-- Top Left -->
+      <picture class="media-frame">
+        <source type="image/webp" srcset="/gifs/flextape.webp">
+        <img src="/gifs/flextape.gif" class="bg-square-gif bg-gif-1" alt="Flex tape leak fix" width="76" height="76" loading="eager" fetchpriority="high" decoding="async">
+      </picture>
+      <!-- Upper Mid Left (High in upper blank space) -->
+      <picture class="media-frame">
+        <source type="image/webp" srcset="/gifs/spongebob-fire.webp">
+        <img src="/gifs/spongebob-fire.gif" class="bg-square-gif bg-gif-5" alt="Spongebob office fire" width="76" height="76" loading="eager" decoding="async">
+      </picture>
+      <!-- Mid Far Left -->
+      <picture class="media-frame">
+        <source type="image/webp" srcset="/gifs/this-is-fine.webp">
+        <img src="/gifs/this-is-fine.gif" class="bg-square-gif bg-gif-3" alt="This is fine" width="76" height="76" loading="lazy" decoding="async">
+      </picture>
+      <!-- Lower Left -->
+      <picture class="media-frame">
+        <source type="image/webp" srcset="/gifs/popcat.webp">
+        <img src="/gifs/popcat.gif" class="bg-square-gif bg-gif-7" alt="Popcat meme" width="76" height="76" loading="lazy" decoding="async">
+      </picture>
+
+      <!-- Top Right -->
+      <picture class="media-frame">
+        <source type="image/webp" srcset="/gifs/cat-typing.webp">
+        <img src="/gifs/cat-typing.gif" class="bg-square-gif bg-gif-2" alt="Cat typing code" width="76" height="76" loading="eager" decoding="async">
+      </picture>
+      <!-- Upper Mid Right (High in upper blank space) -->
+      <picture class="media-frame">
+        <source type="image/webp" srcset="/gifs/bongo-cat.webp">
+        <img src="/gifs/bongo-cat.gif" class="bg-square-gif bg-gif-6" alt="Bongo cat coding" width="76" height="76" loading="eager" decoding="async">
+      </picture>
+      <!-- Mid Far Right -->
+      <picture class="media-frame">
+        <source type="image/webp" srcset="/gifs/mario-pipe.webp">
+        <img src="/gifs/mario-pipe.gif" class="bg-square-gif bg-gif-4" alt="Mario plumber pipe" width="76" height="76" loading="lazy" decoding="async">
+      </picture>
+      <!-- Lower Right -->
+      <picture class="media-frame">
+        <source type="image/webp" srcset="/gifs/monkey-developer.webp">
+        <img src="/gifs/monkey-developer.gif" class="bg-square-gif bg-gif-8" alt="Monkey developer" width="76" height="76" loading="lazy" decoding="async">
+      </picture>
+    </div>
+
+    <div class="container" style="position:relative; z-index: 10;">
+      <!-- Main Center Hero Content -->
+      <div class="hero-center">
+        <h1 class="hero-title">let plumber do the job</h1>
+
+        <!-- Repository Form Box -->
+        <form class="repo-form-box" id="scanForm">
+          <svg class="github-svg" viewBox="0 0 24 24"><path d="M12 2A10 10 0 0 0 2 12c0 4.42 2.87 8.17 6.84 9.5.5.08.66-.23.66-.5v-1.69c-2.77.6-3.36-1.34-3.36-1.34-.46-1.16-1.11-1.47-1.11-1.47-.91-.62.07-.6.07-.6 1 .07 1.53 1.03 1.53 1.03.87 1.52 2.34 1.07 2.91.83.09-.65.35-1.09.63-1.34-2.22-.25-4.55-1.11-4.55-4.92 0-1.11.38-2 1.03-2.71-.1-.25-.45-1.29.1-2.64 0 0 .84-.27 2.75 1.02.79-.22 1.65-.33 2.5-.33.85 0 1.71.11 2.5.33 1.91-1.29 2.75-1.02 2.75-1.02.55 1.35.2 2.39.1 2.64.65.71 1.03 1.6 1.03 2.71 0 3.82-2.34 4.66-4.57 4.91.36.31.69.92.69 1.85V21c0 .27.16.59.67.5C19.14 20.16 22 16.42 22 12A10 10 0 0 0 12 2z"/></svg>
+          <input type="text" class="repo-input-field" id="repoInput" placeholder="github.com/owner/repo or owner/repo" autocomplete="off" spellcheck="false" required>
+          <button type="submit" class="btn-inspect" id="scanBtn">
+            <svg class="btn-inspect-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
+            <span>inspect repo</span>
+          </button>
+        </form>
+
+        <!-- Sample Repo Chips -->
+        <div class="samples-row">
+          <span>Try a sample:</span>
+          <button class="sample-chip" type="button" data-sample="expressjs/express">expressjs/express</button>
+          <button class="sample-chip" type="button" data-sample="pallets/flask">pallets/flask</button>
+          <button class="sample-chip" type="button" data-sample="fastapi/fastapi">fastapi/fastapi</button>
+        </div>
+
+        <!-- Status Ticker -->
+        <div class="status-ticker-area" id="statusArea"></div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- Sky Zone: Section 2 & 3 with Atmospheric Sky Background & Fades -->
+  <div class="sky-zone">
+    <!-- Technical Inspection Categories -->
+    <section class="content-section" id="inspects">
+    <!-- Ambient Section Stickers (Anchored to section, natural scroll) -->
+    <div class="section-ambient-stickers" aria-hidden="true">
+      <picture class="media-frame">
+        <source type="image/webp" srcset="/gifs/dumpster-fire.webp">
+        <img src="/gifs/dumpster-fire.gif" class="bg-square-gif ambient-sticker-left" alt="Dumpster fire" width="76" height="76" loading="lazy" decoding="async">
+      </picture>
+      <picture class="media-frame">
+        <source type="image/webp" srcset="/gifs/monkey-developer.webp">
+        <img src="/gifs/monkey-developer.gif" class="bg-square-gif ambient-sticker-right" alt="Monkey developer" width="76" height="76" loading="lazy" decoding="async">
+      </picture>
+    </div>
+
+    <div class="container">
+      <div class="section-header">
+        <h2>inspection categories</h2>
+        <p>Deterministic checks across five core engineering disciplines.</p>
+      </div>
+
+      <div class="cards-grid">
+        <!-- Card 1: leaks_and_secrets.log -->
+        <div class="card retro-card">
+          <div class="card-head retro-card-head">
+            <div class="card-title-group">
+              <div class="window-dots-mini">
+                <span class="window-dot-mini close"></span>
+                <span class="window-dot-mini min"></span>
+                <span class="window-dot-mini max"></span>
+              </div>
+              <h3>leaks_and_secrets.log</h3>
+            </div>
+            <span class="window-close-x" aria-hidden="true">&times;</span>
+          </div>
+          <div class="card-media-window">
+            <picture class="media-frame">
+              <source type="image/webp" srcset="/gifs/anime-cyber.webp">
+              <img src="/gifs/anime-cyber.gif" class="card-media-gif" alt="Anime cyber diagnostics" loading="lazy" decoding="async">
+            </picture>
+          </div>
+          <div class="card-body retro-card-body">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+              <span class="card-tag retro-card-tag">Critical</span>
+            </div>
+            <p>Scans for leaked API keys, tokens, and committed credentials.</p>
+            <ul>
+              <li>OpenAI, Anthropic, AWS, Stripe keys</li>
+              <li>Plaintext passwords and database strings</li>
+              <li>Real production secrets in committed .env files</li>
+            </ul>
+          </div>
+        </div>
+
+        <!-- Card 2: clogs_and_stubs.diff -->
+        <div class="card retro-card">
+          <div class="card-head retro-card-head">
+            <div class="card-title-group">
+              <div class="window-dots-mini">
+                <span class="window-dot-mini close"></span>
+                <span class="window-dot-mini min"></span>
+                <span class="window-dot-mini max"></span>
+              </div>
+              <h3>clogs_and_stubs.diff</h3>
+            </div>
+            <span class="window-close-x" aria-hidden="true">&times;</span>
+          </div>
+          <div class="card-media-window">
+            <picture class="media-frame">
+              <source type="image/webp" srcset="/gifs/anime-typing.webp">
+              <img src="/gifs/anime-typing.gif" class="card-media-gif" alt="Anime lightning fast typing" loading="lazy" decoding="async">
+            </picture>
+          </div>
+          <div class="card-body retro-card-body">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+              <span class="card-tag retro-card-tag">High</span>
+            </div>
+            <p>Finds AI agent diff elisions and silent failure blocks.</p>
+            <ul>
+              <li><code>// ... existing code ...</code> truncation tells</li>
+              <li>Silent error swallowing (<code>except: pass</code>, <code>catch &#123;&#125;</code>)</li>
+              <li>Unimplemented stub functions &amp; robotic step comments</li>
+            </ul>
+          </div>
+        </div>
+
+        <!-- Card 3: ai_slop_tells.css -->
+        <div class="card retro-card">
+          <div class="card-head retro-card-head">
+            <div class="card-title-group">
+              <div class="window-dots-mini">
+                <span class="window-dot-mini close"></span>
+                <span class="window-dot-mini min"></span>
+                <span class="window-dot-mini max"></span>
+              </div>
+              <h3>ai_slop_tells.css</h3>
+            </div>
+            <span class="window-close-x" aria-hidden="true">&times;</span>
+          </div>
+          <div class="card-media-window">
+            <picture class="media-frame">
+              <source type="image/webp" srcset="/gifs/anime-panic.webp">
+              <img src="/gifs/anime-panic.gif" class="card-media-gif" alt="Anime computer meltdown" loading="lazy" decoding="async">
+            </picture>
+          </div>
+          <div class="card-body retro-card-body">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+              <span class="card-tag retro-card-tag">Medium</span>
+            </div>
+            <p>Flags the aesthetic defaults generated by frontier models.</p>
+            <ul>
+              <li>Purple-to-pink gradient defaults (<code>from-purple-600</code>)</li>
+              <li>Heavy neon blur glow box-shadows</li>
+              <li>Chatbot conversational residue (<em>"As an AI model..."</em>)</li>
+            </ul>
+          </div>
+        </div>
+
+        <!-- Card 4: pipes_and_deps.json -->
+        <div class="card retro-card">
+          <div class="card-head retro-card-head">
+            <div class="card-title-group">
+              <div class="window-dots-mini">
+                <span class="window-dot-mini close"></span>
+                <span class="window-dot-mini min"></span>
+                <span class="window-dot-mini max"></span>
+              </div>
+              <h3>pipes_and_deps.json</h3>
+            </div>
+            <span class="window-close-x" aria-hidden="true">&times;</span>
+          </div>
+          <div class="card-media-window">
+            <picture class="media-frame">
+              <source type="image/webp" srcset="/gifs/anime-hacker.webp">
+              <img src="/gifs/anime-hacker.gif" class="card-media-gif" alt="Anime holographic hacking" loading="lazy" decoding="async">
+            </picture>
+          </div>
+          <div class="card-body retro-card-body">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+              <span class="card-tag retro-card-tag">High</span>
+            </div>
+            <p>Detects hallucinated libraries and broken links.</p>
+            <ul>
+              <li>Hallucinated package imports not in registry</li>
+              <li>Undeclared dependencies missing from manifest</li>
+              <li>Dead links using <code>href="#"</code> or <code>javascript:void(0)</code></li>
+            </ul>
+          </div>
+        </div>
+
+        <!-- Card 5: joints_and_a11y.html -->
+        <div class="card retro-card">
+          <div class="card-head retro-card-head">
+            <div class="card-title-group">
+              <div class="window-dots-mini">
+                <span class="window-dot-mini close"></span>
+                <span class="window-dot-mini min"></span>
+                <span class="window-dot-mini max"></span>
+              </div>
+              <h3>joints_and_a11y.html</h3>
+            </div>
+            <span class="window-close-x" aria-hidden="true">&times;</span>
+          </div>
+          <div class="card-media-window">
+            <picture class="media-frame">
+              <source type="image/webp" srcset="/gifs/anime-coding.webp">
+              <img src="/gifs/anime-coding.gif" class="card-media-gif" alt="Anime coding inspection" loading="lazy" decoding="async">
+            </picture>
+          </div>
+          <div class="card-body retro-card-body">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+              <span class="card-tag retro-card-tag">Medium</span>
+            </div>
+            <p>Enforces semantic HTML and reliable test verification.</p>
+            <ul>
+              <li>Clickable <code>&lt;div&gt;</code> elements without keyboard roles</li>
+              <li>Focus outlines stripped with <code>outline: none</code></li>
+              <li>Empty unit tests containing zero assertions</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Preferences Pane / Integrations -->
+  <section class="content-section" id="run">
+    <!-- Ambient Section Stickers (Anchored to section, natural scroll) -->
+    <div class="section-ambient-stickers" aria-hidden="true">
+      <picture class="media-frame">
+        <source type="image/webp" srcset="/gifs/plumbing-fix.webp">
+        <img src="/gifs/plumbing-fix.gif" class="bg-square-gif ambient-sticker-left" alt="Plumbing fix" width="76" height="76" loading="lazy" decoding="async">
+      </picture>
+      <picture class="media-frame">
+        <source type="image/webp" srcset="/gifs/matrix-code.webp">
+        <img src="/gifs/matrix-code.gif" class="bg-square-gif ambient-sticker-right" alt="Matrix terminal code" width="76" height="76" loading="lazy" decoding="async">
+      </picture>
+    </div>
+
+    <div class="container">
+      <div class="section-header">
+        <h2>run plumber everywhere</h2>
+        <p>Integrate directly into your terminal workflow or automated CI pipeline.</p>
+      </div>
+
+      <div class="pref-pane" data-tabs>
+        <div class="pref-tabbar" role="tablist">
+          <div class="window-dots-mini" style="margin: 0 10px 0 14px;">
+            <span class="window-dot-mini close"></span>
+            <span class="window-dot-mini min"></span>
+            <span class="window-dot-mini max"></span>
+          </div>
+          <button class="pref-tab" role="tab" id="tab-cli" aria-controls="panel-cli" aria-selected="true">Terminal CLI</button>
+          <button class="pref-tab" role="tab" id="tab-claude" aria-controls="panel-claude" aria-selected="false">Claude Code</button>
+          <button class="pref-tab" role="tab" id="tab-cursor" aria-controls="panel-cursor" aria-selected="false">Cursor &amp; MCP</button>
+          <button class="pref-tab" role="tab" id="tab-ci" aria-controls="panel-ci" aria-selected="false">GitHub Actions</button>
+        </div>
+
+        <div class="pref-content" id="panel-cli" role="tabpanel" aria-labelledby="tab-cli">
+          <p class="pref-desc">Inspect local directories or public repositories directly from your terminal:</p>
+          <div class="code-block"><pre>python -m plumber scan .                       # inspect current repo
+python -m plumber scan owner/repo              # stream and inspect GitHub repo
+python -m plumber scan . --format json         # export structured JSON report</pre></div>
+        </div>
+
+        <div class="pref-content" id="panel-claude" role="tabpanel" aria-labelledby="tab-claude" hidden>
+          <p class="pref-desc">Configure Claude Code to automatically check modified files as it works:</p>
+          <div class="code-block"><pre># In your Claude Code settings or AGENTS.md
+python -m plumber scan . --fail-on high        # validates changed lines</pre></div>
+        </div>
+
+        <div class="pref-content" id="panel-cursor" role="tabpanel" aria-labelledby="tab-cursor" hidden>
+          <p class="pref-desc">Cursor rules and MCP integration configuration:</p>
+          <div class="code-block"><pre>{
+  "mcpServers": {
+    "plumber": {
+      "command": "python",
+      "args": ["-m", "plumber", "mcp"]
+    }
+  }
+}</pre></div>
+        </div>
+
+        <div class="pref-content" id="panel-ci" role="tabpanel" aria-labelledby="tab-ci" hidden>
+          <p class="pref-desc">Automate repository hygiene enforcement on pull requests:</p>
+          <div class="code-block"><pre># .github/workflows/plumber.yml
+name: Plumber Hygiene Audit
+on: [pull_request]
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: python -m plumber scan . --fail-on high</pre></div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <!-- Plain Zone: Last Page with Solid Calm Color (No Dots, No Sky) -->
+  <div class="plain-zone">
+    <section class="content-section" id="badge">
+      <!-- Ambient Section Stickers (Anchored to section, natural scroll) -->
+      <div class="section-ambient-stickers" aria-hidden="true">
+        <picture class="media-frame">
+          <source type="image/webp" srcset="/gifs/leak-water.webp">
+          <img src="/gifs/leak-water.gif" class="bg-square-gif ambient-sticker-left" alt="Water leak pipe" width="76" height="76" loading="lazy" decoding="async">
+        </picture>
+        <picture class="media-frame">
+          <source type="image/webp" srcset="/gifs/pipe-wrench.webp">
+          <img src="/gifs/pipe-wrench.gif" class="bg-square-gif ambient-sticker-right" alt="Pipe wrench tool" width="76" height="76" loading="lazy" decoding="async">
+        </picture>
+      </div>
+
+      <div class="container">
+        <div class="section-header">
+          <div style="display:flex; align-items:center; gap:10px; justify-content:center;">
+            <h2>add the plumber badge</h2>
+            <picture class="media-frame">
+              <source type="image/webp" srcset="/gifs/party-parrot.webp">
+              <img src="/gifs/party-parrot.gif" class="inline-gif" alt="Party Parrot Badge" width="34" height="28" loading="lazy" decoding="async">
+            </picture>
+          </div>
+          <p>Display your repository health grade in your project README.</p>
+        </div>
+
+        <div class="badge-card">
+          <div class="badge-live-row">
+            <img id="badgePreview" src="/badge/pallets/flask" alt="Plumber Badge Preview" width="130" height="20">
+            <span class="sample-chip" id="badgeRepoLabel">pallets/flask</span>
+          </div>
+          <div class="code-block">
+            <pre id="badgeCode"></pre>
+          </div>
+          <p style="font-size: 11.5px; color: var(--muted); margin-top: 8px;">The badge renders clean SVG and refreshes at the edge.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="site-footer">
+      <div class="container footer-inner">
+        <span>Plumber — Designed by developers for developers. MIT License.</span>
+        <nav class="footer-links">
+          <a href="#inspects">Rules</a>
+          <a href="#run">CLI</a>
+          <a href="/api/badge?repo=pallets/flask" target="_blank">Badge API</a>
+        </nav>
+      </div>
+  </div>
+</main>
+
+<!-- About Dialog Modal -->
+<div class="modal-backdrop retro-modal-backdrop" id="aboutModal">
+  <div class="dialog retro-dialog" role="dialog" aria-modal="true" aria-labelledby="aboutDialogTitle">
+    <div class="dialog-head">
+      <span id="aboutDialogTitle">About Plumber</span>
+      <button class="dialog-close-btn" id="closeAboutBtn" type="button" aria-label="Close dialog">✕</button>
+    </div>
+    <div class="dialog-body" style="text-align:center;">
+      <picture class="media-frame">
+        <source type="image/webp" srcset="/gifs/bongo-cat.webp">
+        <img src="/gifs/bongo-cat.gif" class="modal-gif" alt="Plumber Mascot" width="70" height="52" loading="lazy" decoding="async">
+      </picture>
+      <h4>Plumber v1.0</h4>
+      <p>A deterministic code leak, clog, and AI slop inspector for the modern agent era.</p>
+      <p>Engineered without LLM dependencies for instantaneous execution, reproducible findings, and complete offline capability.</p>
+      <button class="btn-utility" id="confirmAboutBtn" type="button" style="width:100%; justify-content:center;">OK</button>
+    </div>
+  </div>
+</div>
+
+<!-- Changelog Dialog Modal -->
+<div class="modal-backdrop retro-modal-backdrop" id="changelogModal">
+  <div class="dialog retro-dialog" role="dialog" aria-modal="true" aria-labelledby="changelogDialogTitle">
+    <div class="dialog-head">
+      <span id="changelogDialogTitle">Release Notes</span>
+      <button class="dialog-close-btn" id="closeChangelogBtn" type="button" aria-label="Close dialog">✕</button>
+    </div>
+    <div class="dialog-body" style="text-align:center;">
+      <picture class="media-frame">
+        <source type="image/webp" srcset="/gifs/spongebob-fire.webp">
+        <img src="/gifs/spongebob-fire.gif" class="modal-gif" alt="Release Notes" width="70" height="52" loading="lazy" decoding="async">
+      </picture>
+      <h4>Plumber 1.0.0</h4>
+      <p style="font-family:var(--font-mono); font-size:12px; margin-bottom:12px; text-align:left;">• Clean, responsive code inspection interface<br>• Asymptotic density scoring curve (0 to 100)<br>• Pure Python streaming tarball sandbox<br>• Dynamic SVG badges &amp; AI fix brief generator</p>
+      <button class="btn-utility" id="confirmChangelogBtn" type="button" style="width:100%; justify-content:center;">Close</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+</body>
+</html>

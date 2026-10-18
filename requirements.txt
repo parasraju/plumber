@@ -1,0 +1,2 @@
+# Plumber requires Python 3.10+
+# Core inspection and serverless engine uses Python standard library only (zero external dependencies).

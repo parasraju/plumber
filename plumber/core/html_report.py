@@ -13,7 +13,7 @@ def render_html_report(report: ScanReport) -> str:
     badge_color = GRADE_COLORS.get(report.grade, "#2B7A4B")
     report_json = json.dumps(report.to_dict())
 
-    score_gif = "/gifs/bongo-cat.gif" if report.grade in ("A", "B") else "/gifs/this-is-fine.gif"
+    score_gif = "/gifs/anime-coding.webp" if report.grade in ("A", "B") else "/gifs/anime-panic.webp"
 
     commit_link = (
         f'<a href="https://github.com/{esc_slug}/tree/{report.commit}" target="_blank" rel="noopener" class="commit-link">{report.commit[:7]}</a>'
@@ -114,10 +114,18 @@ def render_html_report(report: ScanReport) -> str:
       padding: 0;
     }}
 
+    html {{
+      zoom: 1.25;
+    }}
+
+    @media (max-width: 680px) {{
+      html {{
+        zoom: 1;
+      }}
+    }}
+
     html, body {{
       background-color: var(--bg);
-      background-image: radial-gradient(var(--dot) 1.2px, transparent 1.2px);
-      background-size: 20px 20px;
       color: var(--fg);
       font-family: var(--font-sans);
       font-size: 13px;
@@ -125,6 +133,7 @@ def render_html_report(report: ScanReport) -> str:
       -webkit-font-smoothing: antialiased;
       -moz-osx-font-smoothing: grayscale;
       min-height: 100vh;
+      overflow-x: hidden;
     }}
 
     a {{
@@ -805,6 +814,289 @@ def render_html_report(report: ScanReport) -> str:
       }}
     }}
 
+
+    /* ==========================================================================
+       Zone 1: Report Hero Zone (Dotted Canvas Only Here)
+       ========================================================================== */
+    .report-hero-zone {{
+      position: relative;
+      background-color: var(--bg);
+      background-image: radial-gradient(var(--dot) 1.2px, transparent 1.2px);
+      background-size: 20px 20px;
+      padding: 0 0 36px;
+      overflow: hidden;
+      border-bottom: none;
+    }}
+
+    .report-ambient-gifs {{
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+      overflow: hidden;
+    }}
+
+    .ambient-gif-1 {{
+      top: 18px;
+      left: 20px;
+      transform: rotate(-5deg);
+    }}
+
+    .ambient-gif-2 {{
+      top: 18px;
+      right: 20px;
+      transform: rotate(4deg);
+    }}
+
+    .ambient-gif-3 {{
+      bottom: 12px;
+      left: 32px;
+      transform: rotate(3deg);
+    }}
+
+    .ambient-gif-4 {{
+      bottom: 12px;
+      right: 32px;
+      transform: rotate(-4deg);
+    }}
+
+    @media (max-width: 1100px) {{
+      .report-ambient-gifs {{
+        display: none;
+      }}
+    }}
+
+    .score-card-pill {{
+      display: inline-flex;
+      align-items: center;
+      gap: 12px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      box-shadow: var(--shadow-card);
+      border-radius: 12px;
+      padding: 6px 14px 6px 8px;
+    }}
+
+    .report-score-gif {{
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      box-shadow: var(--shadow-btn);
+      object-fit: cover;
+      aspect-ratio: 1 / 1;
+    }}
+
+    /* Aqua Capsule Button for Primary Actions */
+    .btn-utility.btn-primary {{
+      position: relative;
+      overflow: hidden;
+      border-radius: 9999px;
+      padding: 5px 16px;
+      font-weight: 600;
+      color: #000000;
+      text-shadow: 0 1px 0 rgba(255, 255, 255, 0.55);
+      border: 1px solid #1c4fb8;
+      background: linear-gradient(180deg, #7bbcfb 0%, #4ea4fd 48%, #1b80f8 50%, #469bfd 75%, #82c6fe 100%);
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.18), inset 0 1px 0.5px rgba(255, 255, 255, 0.95);
+    }}
+
+    .btn-utility.btn-primary:hover {{
+      filter: brightness(1.04);
+      opacity: 1;
+    }}
+
+    /* ==========================================================================
+       Zone 2: Atmospheric Sky Zone with Framer Fades (Findings Workspace)
+       ========================================================================== */
+    .report-sky-zone {{
+      position: relative;
+      background-color: #2b77d9;
+      background-image: image-set(
+        url("/sky_bg.webp") type("image/webp"),
+        url("/sky_bg.jpg") type("image/jpeg")
+      );
+      background-size: cover;
+      background-position: center top;
+      background-repeat: no-repeat;
+      padding: 40px 0 80px;
+      min-height: 85vh;
+      overflow: hidden;
+    }}
+
+    /* Framer-Style Top Fade Transition (Hero Dotted Canvas -> Sky) */
+    .report-sky-zone::before {{
+      content: "";
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 120px;
+      background: linear-gradient(to bottom, var(--bg) 0%, rgba(244, 243, 239, 0) 100%);
+      pointer-events: none;
+      z-index: 5;
+    }}
+
+    /* Framer-Style Bottom Fade Transition (Sky -> Solid Plain Section) */
+    .report-sky-zone::after {{
+      content: "";
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      height: 140px;
+      background: linear-gradient(to bottom, rgba(244, 243, 239, 0) 0%, var(--surface-plain, #F4F3EF) 100%);
+      pointer-events: none;
+      z-index: 5;
+    }}
+
+    [data-theme="dark"] .report-sky-zone::before {{
+      background: linear-gradient(to bottom, var(--bg) 0%, rgba(26, 26, 28, 0) 100%);
+    }}
+
+    [data-theme="dark"] .report-sky-zone::after {{
+      background: linear-gradient(to bottom, rgba(26, 26, 28, 0) 0%, #1A1A1C 100%);
+    }}
+
+    [data-theme="dark"] .report-sky-zone {{
+      filter: brightness(0.85) saturate(1.1);
+    }}
+
+    /* Floating Frosted Pill Toolbar in Sky Zone */
+    .report-sky-zone .toolbar {{
+      background: rgba(255, 255, 255, 0.94);
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+      border: 1px solid rgba(255, 255, 255, 0.9);
+      border-radius: 12px;
+      box-shadow: 0 14px 34px rgba(0, 20, 60, 0.18), 0 2px 6px rgba(0, 0, 0, 0.06);
+      padding: 10px 16px;
+      border-bottom: none;
+      margin-bottom: 24px;
+    }}
+
+    [data-theme="dark"] .report-sky-zone .toolbar {{
+      background: rgba(30, 30, 34, 0.92);
+      border-color: rgba(255, 255, 255, 0.14);
+      box-shadow: 0 16px 36px rgba(0, 0, 0, 0.4);
+    }}
+
+    /* Floating macOS Window Cards in Sky Zone */
+    .report-sky-zone .file-card,
+    .report-sky-zone .files-sidebar {{
+      background: #ffffff;
+      border: 1px solid rgba(0, 0, 0, 0.14);
+      border-radius: 10px;
+      box-shadow: 0 18px 42px rgba(0, 20, 60, 0.22), 0 2px 6px rgba(0, 0, 0, 0.08);
+      overflow: hidden;
+      color: #111111;
+      transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }}
+
+    .report-sky-zone .file-card:hover {{
+      transform: translateY(-2px);
+      box-shadow: 0 22px 48px rgba(0, 20, 60, 0.28), 0 4px 10px rgba(0, 0, 0, 0.12);
+    }}
+
+    .report-sky-zone .file-card-header,
+    .report-sky-zone .sidebar-head {{
+      background: linear-gradient(180deg, #f7f7f7 0%, #ececec 50%, #e1e1e1 100%);
+      border-bottom: 1px solid #d5d5d5;
+      padding: 8px 12px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }}
+
+    /* Authentic 3D Gel Window Control Dots */
+    .window-dots-mini {{
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      flex-shrink: 0;
+    }}
+
+    .window-dot-mini {{
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      display: inline-block;
+      position: relative;
+      box-shadow: 0 1px 1px rgba(0, 0, 0, 0.2);
+    }}
+
+    .window-dot-mini.close {{
+      background: radial-gradient(circle at 35% 30%, #ff837d 0%, #ff5f56 50%, #e0443e 100%);
+      border: 1px solid #cf3c37;
+    }}
+
+    .window-dot-mini.min {{
+      background: radial-gradient(circle at 35% 30%, #ffdf6d 0%, #ffbd2e 50%, #dea123 100%);
+      border: 1px solid #cfa01f;
+    }}
+
+    .window-dot-mini.max {{
+      background: radial-gradient(circle at 35% 30%, #6be375 0%, #27c93f 50%, #1eae33 100%);
+      border: 1px solid #1a962b;
+    }}
+
+    .window-close-x {{
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      font-size: 15px;
+      line-height: 1;
+      color: #8c8c8c;
+      cursor: default;
+      user-select: none;
+      transition: color 0.15s ease;
+      padding: 0 2px;
+    }}
+
+    .window-close-x:hover {{
+      color: #333333;
+    }}
+
+    /* Dark Mode Overrides for Sky Zone Cards */
+    [data-theme="dark"] .report-sky-zone .file-card,
+    [data-theme="dark"] .report-sky-zone .files-sidebar {{
+      background: #1e1e22;
+      border-color: rgba(255, 255, 255, 0.12);
+      color: #ededed;
+    }}
+
+    [data-theme="dark"] .report-sky-zone .file-card-header,
+    [data-theme="dark"] .report-sky-zone .sidebar-head {{
+      background: linear-gradient(180deg, #2c2c32 0%, #24242a 100%);
+      border-bottom-color: #38383e;
+    }}
+
+    [data-theme="dark"] .issue-code {{
+      background: #141416;
+      border-color: #34343a;
+      color: #ededed;
+    }}
+
+    /* ==========================================================================
+       Zone 3: Plain Calm Surface (No Dots, No Sky, Solid Background)
+       ========================================================================== */
+    .report-plain-zone {{
+      position: relative;
+      background-color: var(--surface-plain, #F4F3EF);
+      padding: 32px 0 40px;
+      box-sizing: border-box;
+      border-top: none;
+    }}
+
+    [data-theme="dark"] .report-plain-zone {{
+      background-color: #1A1A1C;
+    }}
+
+    .report-footer-inner {{
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 16px;
+    }}
+
     @media (max-width: 820px) {{
       .content-grid {{
         grid-template-columns: 1fr;
@@ -872,90 +1164,140 @@ def render_html_report(report: ScanReport) -> str:
 </head>
 <body>
 
-  <!-- Compact Top Navigation -->
-  <header class="top-bar">
-    <div class="top-bar-inner">
-      <div class="top-bar-left">
-        <a href="/" class="brand" title="Plumber Homepage">
-          <svg viewBox="0 0 24 24"><path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm1 14.93V19a1 1 0 0 1-2 0v-2.07A8.005 8.005 0 0 1 4.07 10H6a1 1 0 0 1 0-2H4.07A8.005 8.005 0 0 1 11 3.07V5a1 1 0 0 1 2 0V3.07A8.005 8.005 0 0 1 19.93 10H18a1 1 0 0 1 0 2h1.93A8.005 8.005 0 0 1 13 16.93zM12 7a5 5 0 1 0 5 5 5 5 0 0 0-5-5z"/></svg>
-          plumber
-        </a>
-        <span class="brand-sep">/</span>
-        <a href="https://github.com/{esc_slug}" target="_blank" rel="noopener" class="repo-link">{esc_slug}</a>
-        <span class="meta-text">at {commit_link} &middot; {report.total_files} files &middot; {report.total_lines:,} lines &middot; {report.duration_seconds:.2f}s</span>
-      </div>
-      <div class="top-actions">
-        <button class="btn-utility" type="button" id="copyBadgeBtn" data-badge="[![Plumber grade](https://{{host}}/badge/{esc_slug})](https://{{host}}/r/{esc_slug})">Copy Badge</button>
-        <button class="btn-utility" type="button" id="themeToggleBtn">
-          <span id="themeBtnText">Dark Mode</span>
-        </button>
-        <a href="/" class="btn-utility btn-primary">Scan Another Repo</a>
-      </div>
+  <!-- Zone 1: Dotted Top Summary Stage -->
+  <div class="report-hero-zone">
+    <!-- Ambient Scattered Meme GIFs (Positioned across the open summary canvas) -->
+    <div class="report-ambient-gifs" aria-hidden="true">
+      <picture class="media-frame">
+        <source type="image/webp" srcset="/gifs/anime-typing.webp">
+        <img src="/gifs/anime-typing.gif" class="bg-square-gif ambient-gif-1" alt="Anime typing" width="70" height="70" loading="eager" decoding="async">
+      </picture>
+      <picture class="media-frame">
+        <source type="image/webp" srcset="/gifs/cat-typing.webp">
+        <img src="/gifs/cat-typing.gif" class="bg-square-gif ambient-gif-2" alt="Cat typing" width="70" height="70" loading="eager" decoding="async">
+      </picture>
+      <picture class="media-frame">
+        <source type="image/webp" srcset="/gifs/this-is-fine.webp">
+        <img src="/gifs/this-is-fine.gif" class="bg-square-gif ambient-gif-3" alt="This is fine" width="70" height="70" loading="lazy" decoding="async">
+      </picture>
+      <picture class="media-frame">
+        <source type="image/webp" srcset="/gifs/party-parrot.webp">
+        <img src="/gifs/party-parrot.gif" class="bg-square-gif ambient-gif-4" alt="Party parrot" width="70" height="70" loading="lazy" decoding="async">
+      </picture>
     </div>
-  </header>
 
-  <main class="container">
-    <!-- Inspection Report Header -->
-    <header class="report-header">
-      <div class="report-header-left">
-        <h1 class="report-title">Inspection Report</h1>
-        <p class="report-desc">Deterministic analysis of code leaks, dead clogs, and AI-generated residue.</p>
-      </div>
-      <div class="report-header-right">
-        <div style="display:flex; align-items:center; gap:12px;">
-          <img src="{score_gif}" class="report-score-gif" width="40" height="40" alt="Score reaction" style="border-radius:4px; border:1px solid var(--border); box-shadow:var(--shadow-btn); object-fit:cover; aspect-ratio:1/1;">
-          <div>
-            <div class="metric-score">
-              <span class="score-num">{report.score:.1f}</span>
-              <span class="score-denom">/ 100</span>
-            </div>
-            <div class="metric-label">
-              HEALTH SCORE &middot; <span class="grade-tag grade-{report.grade}">GRADE {report.grade}</span>
-            </div>
-          </div>
+    <!-- Compact Top Navigation -->
+    <header class="top-bar">
+      <div class="top-bar-inner">
+        <div class="top-bar-left">
+          <a href="/" class="brand" title="Plumber Homepage">
+            <svg viewBox="0 0 24 24"><path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm1 14.93V19a1 1 0 0 1-2 0v-2.07A8.005 8.005 0 0 1 4.07 10H6a1 1 0 0 1 0-2H4.07A8.005 8.005 0 0 1 11 3.07V5a1 1 0 0 1 2 0V3.07A8.005 8.005 0 0 1 19.93 10H18a1 1 0 0 1 0 2h1.93A8.005 8.005 0 0 1 13 16.93zM12 7a5 5 0 1 0 5 5 5 5 0 0 0-5-5z"/></svg>
+            plumber
+          </a>
+          <span class="brand-sep">/</span>
+          <a href="https://github.com/{esc_slug}" target="_blank" rel="noopener" class="repo-link">{esc_slug}</a>
+          <span class="meta-text">at {commit_link} &middot; {report.total_files} files &middot; {report.total_lines:,} lines &middot; {report.duration_seconds:.2f}s</span>
+        </div>
+        <div class="top-actions">
+          <button class="btn-utility" type="button" id="copyBadgeBtn" data-badge="[![Plumber grade](https://{{host}}/badge/{esc_slug})](https://{{host}}/r/{esc_slug})">Copy Badge</button>
+          <button class="btn-utility" type="button" id="themeToggleBtn">
+            <span id="themeBtnText">Dark Mode</span>
+          </button>
+          <a href="/" class="btn-utility btn-primary">Scan Another Repo</a>
         </div>
       </div>
     </header>
 
-    <!-- Filter and Action Toolbar -->
-    <div class="toolbar">
-      <div class="toolbar-left">
-        <div class="toolbar-chips" id="sevChips" role="group" aria-label="Severity filters"></div>
-        <select class="select-utility" id="catFilter" aria-label="Category filter">
-          <option value="">All Categories</option>
-        </select>
-      </div>
-      <div class="toolbar-right">
-        <input type="search" class="search-utility" id="searchFilter" placeholder="Filter by path, rule ID, or text..." autocomplete="off">
-        <select class="select-utility" id="exportSelect" aria-label="Export format">
-          <option value="">Export...</option>
-          <option value="md">Markdown (.md)</option>
-          <option value="json">JSON (.json)</option>
-          <option value="csv">CSV (.csv)</option>
-          <option value="pdf">Print / PDF</option>
-        </select>
-        <button class="btn-utility" id="copyAllBriefBtn" type="button">
-          <img src="/gifs/cat-typing.gif" width="16" height="12" style="border-radius:2px; vertical-align:middle; margin-right:4px;" alt="typing">
-          Copy Fix Brief for AI Agent
-        </button>
-      </div>
-    </div>
-
-    <!-- Main Report Two-Column Layout -->
-    <div class="content-grid">
-      <!-- Left sidebar — Files -->
-      <aside class="files-sidebar" id="filesSidebar" aria-label="Files with findings">
-        <div class="sidebar-head">
-          <span>FILES</span>
-          <span class="sidebar-total-count" id="filesCountBadge">0</span>
+    <div class="container" style="position:relative; z-index:10; padding-top:20px;">
+      <!-- Inspection Report Header -->
+      <header class="report-header">
+        <div class="report-header-left">
+          <h1 class="report-title">inspection report</h1>
+          <p class="report-desc">Deterministic analysis of code leaks, dead clogs, and AI-generated residue.</p>
         </div>
-        <div class="sidebar-list" id="sidebarList"></div>
-      </aside>
-
-      <!-- Main content — Findings -->
-      <section class="findings-container" id="findingsList" aria-label="Findings list"></section>
+        <div class="report-header-right">
+          <div class="score-card-pill">
+            <img src="{score_gif}" class="report-score-gif" width="44" height="44" alt="Score reaction">
+            <div>
+              <div class="metric-score">
+                <span class="score-num">{report.score:.1f}</span>
+                <span class="score-denom">/ 100</span>
+              </div>
+              <div class="metric-label">
+                HEALTH SCORE &middot; <span class="grade-tag grade-{report.grade}">GRADE {report.grade}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </header>
     </div>
-  </main>
+  </div>
+
+  <!-- Zone 2: Atmospheric Sky Zone with Findings -->
+  <div class="report-sky-zone">
+    <div class="container" style="position:relative; z-index:6;">
+      <!-- Filter and Action Toolbar (Frosted Pill Capsule) -->
+      <div class="toolbar">
+        <div class="toolbar-left">
+          <div class="toolbar-chips" id="sevChips" role="group" aria-label="Severity filters"></div>
+          <select class="select-utility" id="catFilter" aria-label="Category filter">
+            <option value="">All Categories</option>
+          </select>
+        </div>
+        <div class="toolbar-right">
+          <input type="search" class="search-utility" id="searchFilter" placeholder="Filter by path, rule ID, or text..." autocomplete="off">
+          <select class="select-utility" id="exportSelect" aria-label="Export format">
+            <option value="">Export...</option>
+            <option value="md">Markdown (.md)</option>
+            <option value="json">JSON (.json)</option>
+            <option value="csv">CSV (.csv)</option>
+            <option value="pdf">Print / PDF</option>
+          </select>
+          <button class="btn-utility" id="copyAllBriefBtn" type="button">
+            <img src="/gifs/anime-typing.webp" width="16" height="12" style="border-radius:2px; vertical-align:middle; margin-right:4px;" alt="typing">
+            Copy Fix Brief for AI Agent
+          </button>
+        </div>
+      </div>
+
+      <!-- Main Report Two-Column Layout -->
+      <div class="content-grid">
+        <!-- Left sidebar — Files -->
+        <aside class="files-sidebar" id="filesSidebar" aria-label="Files with findings">
+          <div class="sidebar-head">
+            <div style="display:flex; align-items:center; gap:8px;">
+              <div class="window-dots-mini">
+                <span class="window-dot-mini close"></span>
+                <span class="window-dot-mini min"></span>
+                <span class="window-dot-mini max"></span>
+              </div>
+              <span>FILES</span>
+            </div>
+            <span class="sidebar-total-count" id="filesCountBadge">0</span>
+          </div>
+          <div class="sidebar-list" id="sidebarList"></div>
+        </aside>
+
+        <!-- Main content — Findings -->
+        <section class="findings-container" id="findingsList" aria-label="Findings list"></section>
+      </div>
+    </div>
+  </div>
+
+  <!-- Zone 3: Plain Calm Surface (No Dots, No Sky, Solid Background) -->
+  <div class="report-plain-zone">
+    <div class="container report-footer-inner">
+      <div style="display:flex; align-items:center; gap:8px;">
+        <span class="brand-title" style="font-weight:700;">plumber</span>
+        <span class="meta-text">&middot; deterministic code leaks, clogs, and AI slop inspection</span>
+      </div>
+      <div style="display:flex; gap:16px; align-items:center;">
+        <a href="/" class="btn-utility">Home</a>
+        <a href="https://github.com/{esc_slug}" target="_blank" rel="noopener" class="btn-utility">GitHub Repo</a>
+        <button class="btn-utility" type="button" onclick="window.scrollTo({{top:0, behavior:'smooth'}})">Back to Top &uarr;</button>
+      </div>
+    </div>
+  </div>
 
   <div class="toast" id="toast"></div>
 
@@ -1124,7 +1466,10 @@ def render_html_report(report: ScanReport) -> str:
               </div>
               <span class="file-path" title="${{escapeHtml(file.path)}}">${{escapeHtml(file.path)}}</span>
             </div>
-            <button class="btn-utility" type="button" data-copy-idx="${{idx}}">Copy File Fix</button>
+            <div style="display:flex; align-items:center; gap:8px;">
+              <button class="btn-utility" type="button" data-copy-idx="${{idx}}">Copy File Fix</button>
+              <span class="window-close-x" aria-hidden="true">&times;</span>
+            </div>
           `;
           card.appendChild(header);
 

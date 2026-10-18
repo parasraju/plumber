@@ -219,7 +219,7 @@
       <div class="status-pill retro-status-pill">
         <picture class="media-frame">
           <source type="image/webp" srcset="/gifs/popcat.webp">
-          <img src="/gifs/popcat.gif" class="ticker-gif" alt="Inspecting code" width="32" height="24" decoding="async">
+          <img src="/gifs/popcat.gif" class="ticker-gif" alt="Inspecting code" width="24" height="24" decoding="async">
         </picture>
         <span class="spinner retro-spinner" aria-hidden="true"></span>
         <span id="scanTimerLabel">Connecting to GitHub CDN... 0s</span>

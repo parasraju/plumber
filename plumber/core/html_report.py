@@ -11,9 +11,8 @@ def render_html_report(report: ScanReport) -> str:
     slug = f"{report.owner}/{report.repo_name}" if report.owner else report.repo_name
     esc_slug = html.escape(slug)
     badge_color = GRADE_COLORS.get(report.grade, "#2B7A4B")
+    badge_bg = f"{badge_color}18"
     report_json = json.dumps(report.to_dict())
-
-    score_gif = "/gifs/anime-coding.webp" if report.grade in ("A", "B") else "/gifs/anime-panic.webp"
 
     commit_link = (
         f'<a href="https://github.com/{esc_slug}/tree/{report.commit}" target="_blank" rel="noopener" class="commit-link">{report.commit[:7]}</a>'
@@ -816,55 +815,14 @@ def render_html_report(report: ScanReport) -> str:
 
 
     /* ==========================================================================
-       Zone 1: Report Hero Zone (Dotted Canvas Only Here)
+       Zone 1: Report Hero Zone (Pristine Clean Canvas, No Dots, No GIFs)
        ========================================================================== */
     .report-hero-zone {{
       position: relative;
       background-color: var(--bg);
-      background-image: radial-gradient(var(--dot) 1.2px, transparent 1.2px);
-      background-size: 20px 20px;
-      padding: 0 0 36px;
+      padding: 0 0 32px;
       overflow: hidden;
       border-bottom: none;
-    }}
-
-    .report-ambient-gifs {{
-      position: absolute;
-      inset: 0;
-      width: 100%;
-      height: 100%;
-      pointer-events: none;
-      overflow: hidden;
-    }}
-
-    .ambient-gif-1 {{
-      top: 18px;
-      left: 20px;
-      transform: rotate(-5deg);
-    }}
-
-    .ambient-gif-2 {{
-      top: 18px;
-      right: 20px;
-      transform: rotate(4deg);
-    }}
-
-    .ambient-gif-3 {{
-      bottom: 12px;
-      left: 32px;
-      transform: rotate(3deg);
-    }}
-
-    .ambient-gif-4 {{
-      bottom: 12px;
-      right: 32px;
-      transform: rotate(-4deg);
-    }}
-
-    @media (max-width: 1100px) {{
-      .report-ambient-gifs {{
-        display: none;
-      }}
     }}
 
     .score-card-pill {{
@@ -875,15 +833,21 @@ def render_html_report(report: ScanReport) -> str:
       border: 1px solid var(--border);
       box-shadow: var(--shadow-card);
       border-radius: 12px;
-      padding: 6px 14px 6px 8px;
+      padding: 8px 16px 8px 12px;
     }}
 
-    .report-score-gif {{
-      border-radius: 8px;
-      border: 1px solid var(--border);
-      box-shadow: var(--shadow-btn);
-      object-fit: cover;
-      aspect-ratio: 1 / 1;
+    .score-badge-circle {{
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border: 1.5px solid;
+      font-weight: 800;
+      font-size: 18px;
+      font-family: var(--font-mono);
+      flex-shrink: 0;
     }}
 
     /* Aqua Capsule Button for Primary Actions */
@@ -906,31 +870,33 @@ def render_html_report(report: ScanReport) -> str:
     }}
 
     /* ==========================================================================
-       Zone 2: Atmospheric Sky Zone with Framer Fades (Findings Workspace)
+       Zone 2: Atmospheric Sky Zone with Viewport-Fixed Clouds & Smooth Fades
        ========================================================================== */
     .report-sky-zone {{
       position: relative;
       background-color: #2b77d9;
-      background-image: image-set(
-        url("/sky_bg.webp") type("image/webp"),
-        url("/sky_bg.jpg") type("image/jpeg")
-      );
+      background-image:
+        image-set(
+          url("/sky_bg.webp") type("image/webp"),
+          url("/sky_bg.jpg") type("image/jpeg")
+        );
       background-size: cover;
       background-position: center top;
+      background-attachment: fixed;
       background-repeat: no-repeat;
-      padding: 40px 0 80px;
+      padding: 32px 0 80px;
       min-height: 85vh;
       overflow: hidden;
     }}
 
-    /* Framer-Style Top Fade Transition (Hero Dotted Canvas -> Sky) */
+    /* Framer-Style Top Fade Transition (Hero Clean Canvas -> Sky) */
     .report-sky-zone::before {{
       content: "";
       position: absolute;
       top: 0;
       left: 0;
       right: 0;
-      height: 120px;
+      height: 50px;
       background: linear-gradient(to bottom, var(--bg) 0%, rgba(244, 243, 239, 0) 100%);
       pointer-events: none;
       z-index: 5;
@@ -943,22 +909,28 @@ def render_html_report(report: ScanReport) -> str:
       bottom: 0;
       left: 0;
       right: 0;
-      height: 140px;
+      height: 80px;
       background: linear-gradient(to bottom, rgba(244, 243, 239, 0) 0%, var(--surface-plain, #F4F3EF) 100%);
       pointer-events: none;
       z-index: 5;
     }}
 
     [data-theme="dark"] .report-sky-zone::before {{
-      background: linear-gradient(to bottom, var(--bg) 0%, rgba(26, 26, 28, 0) 100%);
+      background: linear-gradient(to bottom, var(--bg) 0%, rgba(20, 20, 22, 0) 100%);
     }}
 
     [data-theme="dark"] .report-sky-zone::after {{
-      background: linear-gradient(to bottom, rgba(26, 26, 28, 0) 0%, #1A1A1C 100%);
+      background: linear-gradient(to bottom, rgba(20, 20, 22, 0) 0%, #141416 100%);
     }}
 
     [data-theme="dark"] .report-sky-zone {{
-      filter: brightness(0.85) saturate(1.1);
+      background-color: #0d1726;
+      background-image:
+        linear-gradient(to bottom, rgba(13, 23, 38, 0.4), rgba(13, 23, 38, 0.5)),
+        image-set(
+          url("/sky_bg.webp") type("image/webp"),
+          url("/sky_bg.jpg") type("image/jpeg")
+        );
     }}
 
     /* Floating Frosted Pill Toolbar in Sky Zone */
@@ -1164,28 +1136,8 @@ def render_html_report(report: ScanReport) -> str:
 </head>
 <body>
 
-  <!-- Zone 1: Dotted Top Summary Stage -->
+  <!-- Zone 1: Top Summary Stage -->
   <div class="report-hero-zone">
-    <!-- Ambient Scattered Meme GIFs (Positioned across the open summary canvas) -->
-    <div class="report-ambient-gifs" aria-hidden="true">
-      <picture class="media-frame">
-        <source type="image/webp" srcset="/gifs/anime-typing.webp">
-        <img src="/gifs/anime-typing.gif" class="bg-square-gif ambient-gif-1" alt="Anime typing" width="70" height="70" loading="eager" decoding="async">
-      </picture>
-      <picture class="media-frame">
-        <source type="image/webp" srcset="/gifs/cat-typing.webp">
-        <img src="/gifs/cat-typing.gif" class="bg-square-gif ambient-gif-2" alt="Cat typing" width="70" height="70" loading="eager" decoding="async">
-      </picture>
-      <picture class="media-frame">
-        <source type="image/webp" srcset="/gifs/this-is-fine.webp">
-        <img src="/gifs/this-is-fine.gif" class="bg-square-gif ambient-gif-3" alt="This is fine" width="70" height="70" loading="lazy" decoding="async">
-      </picture>
-      <picture class="media-frame">
-        <source type="image/webp" srcset="/gifs/party-parrot.webp">
-        <img src="/gifs/party-parrot.gif" class="bg-square-gif ambient-gif-4" alt="Party parrot" width="70" height="70" loading="lazy" decoding="async">
-      </picture>
-    </div>
-
     <!-- Compact Top Navigation -->
     <header class="top-bar">
       <div class="top-bar-inner">
@@ -1217,7 +1169,9 @@ def render_html_report(report: ScanReport) -> str:
         </div>
         <div class="report-header-right">
           <div class="score-card-pill">
-            <img src="{score_gif}" class="report-score-gif" width="44" height="44" alt="Score reaction">
+            <div class="score-badge-circle" style="background:{badge_bg}; border-color:{badge_color}; color:{badge_color};" aria-hidden="true">
+              {report.grade}
+            </div>
             <div>
               <div class="metric-score">
                 <span class="score-num">{report.score:.1f}</span>
@@ -1254,8 +1208,7 @@ def render_html_report(report: ScanReport) -> str:
             <option value="pdf">Print / PDF</option>
           </select>
           <button class="btn-utility" id="copyAllBriefBtn" type="button">
-            <img src="/gifs/anime-typing.webp" width="16" height="12" style="border-radius:2px; vertical-align:middle; margin-right:4px;" alt="typing">
-            Copy Fix Brief for AI Agent
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle; margin-right:5px;"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/></svg>Copy Fix Brief for AI Agent
           </button>
         </div>
       </div>
@@ -1417,7 +1370,9 @@ def render_html_report(report: ScanReport) -> str:
         if (!data.files || data.files.length === 0) {{
           list.innerHTML = `
             <div class="clean-state">
-              <img src="/gifs/bongo-cat.gif" width="72" height="72" alt="Clean repo" style="border-radius:6px; border:1px solid var(--border); box-shadow:var(--shadow-card); margin-bottom:12px; object-fit:cover; aspect-ratio:1/1;">
+              <div style="width:64px; height:64px; border-radius:50%; background:rgba(6,118,71,0.12); display:inline-flex; align-items:center; justify-content:center; margin-bottom:14px; border:1.5px solid #067647;">
+                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#067647" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
+              </div>
               <h3>No Leaks, Clogs, or AI Slop Found</h3>
               <p>This repository adheres to clean code standards and achieved Grade A (0.0 / 100).</p>
             </div>

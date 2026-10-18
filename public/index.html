@@ -121,50 +121,42 @@
   <div class="sky-zone">
     <!-- Technical Inspection Categories -->
     <section class="content-section" id="inspects">
-    <!-- Ambient Section Stickers (Anchored to section, natural scroll) -->
-    <div class="section-ambient-stickers" aria-hidden="true">
+      <!-- Ambient Section Background GIFs (Pure square GIFs, zero layout behind) -->
+      <div class="section-ambient-stickers" aria-hidden="true">
       <picture class="media-frame">
         <source type="image/webp" srcset="/gifs/dumpster-fire.webp">
-        <img src="/gifs/dumpster-fire.gif" class="bg-square-gif ambient-sticker-left" alt="Dumpster fire" width="76" height="76" loading="lazy" decoding="async">
+        <img src="/gifs/dumpster-fire.gif" class="bg-square-gif ambient-sticker-tl" alt="Dumpster fire" width="76" height="76" loading="lazy" decoding="async">
       </picture>
       <picture class="media-frame">
-        <source type="image/webp" srcset="/gifs/monkey-developer.webp">
-        <img src="/gifs/monkey-developer.gif" class="bg-square-gif ambient-sticker-right" alt="Monkey developer" width="76" height="76" loading="lazy" decoding="async">
+        <source type="image/webp" srcset="/gifs/anime-hacker.webp">
+        <img src="/gifs/anime-hacker.gif" class="bg-square-gif ambient-sticker-tr" alt="Anime hacker" width="76" height="76" loading="lazy" decoding="async">
+      </picture>
+      <picture class="media-frame">
+        <source type="image/webp" srcset="/gifs/anime-panic.webp">
+        <img src="/gifs/anime-panic.gif" class="bg-square-gif ambient-sticker-bl" alt="Anime panic" width="76" height="76" loading="lazy" decoding="async">
+      </picture>
+      <picture class="media-frame">
+        <source type="image/webp" srcset="/gifs/anime-coding.webp">
+        <img src="/gifs/anime-coding.gif" class="bg-square-gif ambient-sticker-br" alt="Anime coding" width="76" height="76" loading="lazy" decoding="async">
       </picture>
     </div>
 
-    <div class="container">
+    <div class="container" style="position:relative; z-index: 10;">
       <div class="section-header">
-        <h2>inspection categories</h2>
+        <h2>Inspection Categories</h2>
         <p>Deterministic checks across five core engineering disciplines.</p>
       </div>
 
       <div class="cards-grid">
         <!-- Card 1: leaks_and_secrets.log -->
-        <div class="card retro-card">
-          <div class="card-head retro-card-head">
-            <div class="card-title-group">
-              <div class="window-dots-mini">
-                <span class="window-dot-mini close"></span>
-                <span class="window-dot-mini min"></span>
-                <span class="window-dot-mini max"></span>
-              </div>
-              <h3>leaks_and_secrets.log</h3>
-            </div>
-            <span class="window-close-x" aria-hidden="true">&times;</span>
+        <div class="card category-card">
+          <div class="category-card-head">
+            <h3 class="category-card-title">leaks_and_secrets.log</h3>
+            <span class="category-tag tag-critical">CRITICAL</span>
           </div>
-          <div class="card-media-window">
-            <picture class="media-frame">
-              <source type="image/webp" srcset="/gifs/anime-cyber.webp">
-              <img src="/gifs/anime-cyber.gif" class="card-media-gif" alt="Anime cyber diagnostics" loading="lazy" decoding="async">
-            </picture>
-          </div>
-          <div class="card-body retro-card-body">
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-              <span class="card-tag retro-card-tag">Critical</span>
-            </div>
-            <p>Scans for leaked API keys, tokens, and committed credentials.</p>
-            <ul>
+          <div class="category-card-body">
+            <p class="category-card-desc">Scans for leaked API keys, tokens, and committed credentials.</p>
+            <ul class="category-card-list">
               <li>OpenAI, Anthropic, AWS, Stripe keys</li>
               <li>Plaintext passwords and database strings</li>
               <li>Real production secrets in committed .env files</li>
@@ -173,128 +165,64 @@
         </div>
 
         <!-- Card 2: clogs_and_stubs.diff -->
-        <div class="card retro-card">
-          <div class="card-head retro-card-head">
-            <div class="card-title-group">
-              <div class="window-dots-mini">
-                <span class="window-dot-mini close"></span>
-                <span class="window-dot-mini min"></span>
-                <span class="window-dot-mini max"></span>
-              </div>
-              <h3>clogs_and_stubs.diff</h3>
-            </div>
-            <span class="window-close-x" aria-hidden="true">&times;</span>
+        <div class="card category-card">
+          <div class="category-card-head">
+            <h3 class="category-card-title">clogs_and_stubs.diff</h3>
+            <span class="category-tag tag-high">HIGH</span>
           </div>
-          <div class="card-media-window">
-            <picture class="media-frame">
-              <source type="image/webp" srcset="/gifs/anime-typing.webp">
-              <img src="/gifs/anime-typing.gif" class="card-media-gif" alt="Anime lightning fast typing" loading="lazy" decoding="async">
-            </picture>
-          </div>
-          <div class="card-body retro-card-body">
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-              <span class="card-tag retro-card-tag">High</span>
-            </div>
-            <p>Finds AI agent diff elisions and silent failure blocks.</p>
-            <ul>
+          <div class="category-card-body">
+            <p class="category-card-desc">Finds AI agent diff elisions and silent failure blocks.</p>
+            <ul class="category-card-list">
               <li><code>// ... existing code ...</code> truncation tells</li>
-              <li>Silent error swallowing (<code>except: pass</code>, <code>catch &#123;&#125;</code>)</li>
+              <li>Silent error swallowing (except: pass, catch &#123;&#125;)</li>
               <li>Unimplemented stub functions &amp; robotic step comments</li>
             </ul>
           </div>
         </div>
 
         <!-- Card 3: ai_slop_tells.css -->
-        <div class="card retro-card">
-          <div class="card-head retro-card-head">
-            <div class="card-title-group">
-              <div class="window-dots-mini">
-                <span class="window-dot-mini close"></span>
-                <span class="window-dot-mini min"></span>
-                <span class="window-dot-mini max"></span>
-              </div>
-              <h3>ai_slop_tells.css</h3>
-            </div>
-            <span class="window-close-x" aria-hidden="true">&times;</span>
+        <div class="card category-card">
+          <div class="category-card-head">
+            <h3 class="category-card-title">ai_slop_tells.css</h3>
+            <span class="category-tag tag-medium">MEDIUM</span>
           </div>
-          <div class="card-media-window">
-            <picture class="media-frame">
-              <source type="image/webp" srcset="/gifs/anime-panic.webp">
-              <img src="/gifs/anime-panic.gif" class="card-media-gif" alt="Anime computer meltdown" loading="lazy" decoding="async">
-            </picture>
-          </div>
-          <div class="card-body retro-card-body">
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-              <span class="card-tag retro-card-tag">Medium</span>
-            </div>
-            <p>Flags the aesthetic defaults generated by frontier models.</p>
-            <ul>
-              <li>Purple-to-pink gradient defaults (<code>from-purple-600</code>)</li>
+          <div class="category-card-body">
+            <p class="category-card-desc">Flags the aesthetic defaults generated by frontier models.</p>
+            <ul class="category-card-list">
+              <li>Purple-to-pink gradient defaults (from-purple-600)</li>
               <li>Heavy neon blur glow box-shadows</li>
-              <li>Chatbot conversational residue (<em>"As an AI model..."</em>)</li>
+              <li>Chatbot conversational residue (&ldquo;As an AI model...&rdquo;)</li>
             </ul>
           </div>
         </div>
 
         <!-- Card 4: pipes_and_deps.json -->
-        <div class="card retro-card">
-          <div class="card-head retro-card-head">
-            <div class="card-title-group">
-              <div class="window-dots-mini">
-                <span class="window-dot-mini close"></span>
-                <span class="window-dot-mini min"></span>
-                <span class="window-dot-mini max"></span>
-              </div>
-              <h3>pipes_and_deps.json</h3>
-            </div>
-            <span class="window-close-x" aria-hidden="true">&times;</span>
+        <div class="card category-card">
+          <div class="category-card-head">
+            <h3 class="category-card-title">pipes_and_deps.json</h3>
+            <span class="category-tag tag-high">HIGH</span>
           </div>
-          <div class="card-media-window">
-            <picture class="media-frame">
-              <source type="image/webp" srcset="/gifs/anime-hacker.webp">
-              <img src="/gifs/anime-hacker.gif" class="card-media-gif" alt="Anime holographic hacking" loading="lazy" decoding="async">
-            </picture>
-          </div>
-          <div class="card-body retro-card-body">
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-              <span class="card-tag retro-card-tag">High</span>
-            </div>
-            <p>Detects hallucinated libraries and broken links.</p>
-            <ul>
+          <div class="category-card-body">
+            <p class="category-card-desc">Detects hallucinated libraries and broken links.</p>
+            <ul class="category-card-list">
               <li>Hallucinated package imports not in registry</li>
               <li>Undeclared dependencies missing from manifest</li>
-              <li>Dead links using <code>href="#"</code> or <code>javascript:void(0)</code></li>
+              <li>Dead links using href=&quot;#&quot; or javascript:void(0)</li>
             </ul>
           </div>
         </div>
 
-        <!-- Card 5: joints_and_a11y.html -->
-        <div class="card retro-card">
-          <div class="card-head retro-card-head">
-            <div class="card-title-group">
-              <div class="window-dots-mini">
-                <span class="window-dot-mini close"></span>
-                <span class="window-dot-mini min"></span>
-                <span class="window-dot-mini max"></span>
-              </div>
-              <h3>joints_and_a11y.html</h3>
-            </div>
-            <span class="window-close-x" aria-hidden="true">&times;</span>
+        <!-- Card 5: joints_and_ally.html -->
+        <div class="card category-card">
+          <div class="category-card-head">
+            <h3 class="category-card-title">joints_and_ally.html</h3>
+            <span class="category-tag tag-medium">MEDIUM</span>
           </div>
-          <div class="card-media-window">
-            <picture class="media-frame">
-              <source type="image/webp" srcset="/gifs/anime-coding.webp">
-              <img src="/gifs/anime-coding.gif" class="card-media-gif" alt="Anime coding inspection" loading="lazy" decoding="async">
-            </picture>
-          </div>
-          <div class="card-body retro-card-body">
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-              <span class="card-tag retro-card-tag">Medium</span>
-            </div>
-            <p>Enforces semantic HTML and reliable test verification.</p>
-            <ul>
-              <li>Clickable <code>&lt;div&gt;</code> elements without keyboard roles</li>
-              <li>Focus outlines stripped with <code>outline: none</code></li>
+          <div class="category-card-body">
+            <p class="category-card-desc">Enforces semantic HTML and reliable test verification.</p>
+            <ul class="category-card-list">
+              <li>Clickable &lt;div&gt; elements without keyboard roles</li>
+              <li>Focus outlines stripped with outline: none</li>
               <li>Empty unit tests containing zero assertions</li>
             </ul>
           </div>
@@ -398,7 +326,7 @@ jobs:
             <h2>add the plumber badge</h2>
             <picture class="media-frame">
               <source type="image/webp" srcset="/gifs/party-parrot.webp">
-              <img src="/gifs/party-parrot.gif" class="inline-gif" alt="Party Parrot Badge" width="34" height="28" loading="lazy" decoding="async">
+              <img src="/gifs/party-parrot.gif" class="inline-gif" alt="Party Parrot Badge" width="28" height="28" loading="lazy" decoding="async">
             </picture>
           </div>
           <p>Display your repository health grade in your project README.</p>
@@ -427,6 +355,7 @@ jobs:
           <a href="/api/badge?repo=pallets/flask" target="_blank">Badge API</a>
         </nav>
       </div>
+    </footer>
   </div>
 </main>
 
@@ -440,7 +369,7 @@ jobs:
     <div class="dialog-body" style="text-align:center;">
       <picture class="media-frame">
         <source type="image/webp" srcset="/gifs/bongo-cat.webp">
-        <img src="/gifs/bongo-cat.gif" class="modal-gif" alt="Plumber Mascot" width="70" height="52" loading="lazy" decoding="async">
+        <img src="/gifs/bongo-cat.gif" class="modal-gif" alt="Plumber Mascot" width="64" height="64" loading="lazy" decoding="async">
       </picture>
       <h4>Plumber v1.0</h4>
       <p>A deterministic code leak, clog, and AI slop inspector for the modern agent era.</p>
@@ -460,7 +389,7 @@ jobs:
     <div class="dialog-body" style="text-align:center;">
       <picture class="media-frame">
         <source type="image/webp" srcset="/gifs/spongebob-fire.webp">
-        <img src="/gifs/spongebob-fire.gif" class="modal-gif" alt="Release Notes" width="70" height="52" loading="lazy" decoding="async">
+        <img src="/gifs/spongebob-fire.gif" class="modal-gif" alt="Release Notes" width="64" height="64" loading="lazy" decoding="async">
       </picture>
       <h4>Plumber 1.0.0</h4>
       <p style="font-family:var(--font-mono); font-size:12px; margin-bottom:12px; text-align:left;">• Clean, responsive code inspection interface<br>• Asymptotic density scoring curve (0 to 100)<br>• Pure Python streaming tarball sandbox<br>• Dynamic SVG badges &amp; AI fix brief generator</p>

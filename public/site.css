@@ -742,7 +742,7 @@ picture.media-frame {
 }
 
 /* Tablet / Medium Screens: Place below the hero center in a clean row */
-@media (max-width: 959px) {
+@media (min-width: 769px) and (max-width: 959px) {
   .hero-center {
     transform: none;
   }
@@ -772,20 +772,23 @@ picture.media-frame {
   }
 }
 
-/* Mobile Screens: Show 2 mini square GIFs with safe margins */
-@media (max-width: 540px) {
-  .bg-gifs-container {
-    gap: 10px;
-    margin-top: 16px;
-  }
-
-  .bg-gif-3, .bg-gif-4, .bg-gif-5, .bg-gif-6, .bg-gif-7, .bg-gif-8 {
-    display: none;
-  }
-
-  .bg-square-gif {
-    width: 56px;
-    height: 56px;
+/* Mobile Screens: Completely remove all GIFs when on mobile */
+@media (max-width: 768px) {
+  .bg-gifs-container,
+  .bg-square-gif,
+  .section-ambient-stickers,
+  .ambient-sticker-tl,
+  .ambient-sticker-tr,
+  .ambient-sticker-bl,
+  .ambient-sticker-br,
+  .ambient-sticker-left,
+  .ambient-sticker-right,
+  .inline-gif,
+  .modal-gif,
+  .ticker-gif,
+  img[src$=".gif"],
+  img[src*="/gifs/"] {
+    display: none !important;
   }
 }
 

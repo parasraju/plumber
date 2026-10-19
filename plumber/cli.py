@@ -35,6 +35,9 @@ def main():
     srv_p = subparsers.add_parser("server", help="Start the local Vercel-style web server")
     srv_p.add_argument("-p", "--port", type=int, default=3000, help="Port to bind to")
 
+    # mcp command
+    subparsers.add_parser("mcp", help="Run the Model Context Protocol (MCP) server over stdio")
+
     args = parser.parse_args()
 
     if not args.command or args.command == "scan":
@@ -47,6 +50,9 @@ def main():
     elif args.command == "server":
         from dev import run_server
         run_server(args.port)
+    elif args.command == "mcp":
+        from plumber.mcp import run_mcp_server
+        run_mcp_server()
 
 
 def run_scan_cli(target: str, fmt: str, fail_on: str = None):

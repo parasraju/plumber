@@ -24,6 +24,8 @@ STUB_PATTERN = re.compile(
     re.IGNORECASE
 )
 
+WRAPPER_RE = re.compile(r'def\s+(\w+)\s*\([^)]*\)\s*(?:->\s*[^:]+)?:\s*return\s+([A-Za-z0-9_.]+)\([^)]*\)')
+
 
 @register_rule(
     "clog/elided-code",
@@ -34,6 +36,9 @@ STUB_PATTERN = re.compile(
     "Restore the complete function or component implementation. Elided snippets often accidentally delete working logic."
 )
 def check_elided_code(ctx: FileContext) -> List[Issue]:
+    if not ELIDED_PATTERN.search(ctx.content):
+        return []
+
     issues = []
     for line_num, line in enumerate(ctx.lines, 1):
         if ELIDED_PATTERN.search(line):
@@ -60,10 +65,12 @@ def check_elided_code(ctx: FileContext) -> List[Issue]:
     "Log the error or properly re-raise/handle it with user notification."
 )
 def check_swallowed_exceptions(ctx: FileContext) -> List[Issue]:
-    issues = []
     if not ctx.is_script:
         return []
+    if "except" not in ctx.content and "catch" not in ctx.content:
+        return []
 
+    issues = []
     for line_num, line in enumerate(ctx.lines, 1):
         clean = line.strip()
         next_clean = ctx.lines[line_num].strip() if line_num < len(ctx.lines) else ""
@@ -122,6 +129,9 @@ def check_swallowed_exceptions(ctx: FileContext) -> List[Issue]:
     "Implement the required logic or remove the dead placeholder."
 )
 def check_stub_functions(ctx: FileContext) -> List[Issue]:
+    if not STUB_PATTERN.search(ctx.content):
+        return []
+
     issues = []
     for line_num, line in enumerate(ctx.lines, 1):
         if STUB_PATTERN.search(line):
@@ -148,6 +158,9 @@ def check_stub_functions(ctx: FileContext) -> List[Issue]:
     "Remove procedural step comments or replace with concise architectural documentation."
 )
 def check_step_comments(ctx: FileContext) -> List[Issue]:
+    if not STEP_COMMENT_PATTERN.search(ctx.content):
+        return []
+
     issues = []
     for line_num, line in enumerate(ctx.lines, 1):
         if STEP_COMMENT_PATTERN.search(line):
@@ -174,18 +187,19 @@ def check_step_comments(ctx: FileContext) -> List[Issue]:
     "Call the target function directly and eliminate unnecessary wrapper abstraction layers."
 )
 def check_pointless_wrapper(ctx: FileContext) -> List[Issue]:
-    issues = []
     if not ctx.is_script or ctx.is_test:
         return []
-    # Match functions where body is just "return some_fn(...)"
-    wrapper_re = re.compile(r'def\s+(\w+)\s*\([^)]*\)\s*(?:->\s*[^:]+)?:\s*return\s+([A-Za-z0-9_.]+)\([^)]*\)')
+    if "def " not in ctx.content or "return " not in ctx.content:
+        return []
+
+    issues = []
     for line_num, line in enumerate(ctx.lines, 1):
         if not line.startswith("def "):
             continue
         clean = line.strip()
         next_clean = ctx.lines[line_num].strip() if line_num < len(ctx.lines) else ""
         combined = f"{clean} {next_clean}" if clean.endswith(":") else clean
-        m = wrapper_re.search(combined)
+        m = WRAPPER_RE.search(combined)
         if m and m.group(1) != m.group(2):
             issues.append(Issue(
                 rule_id="slop/pointless-wrapper",
@@ -199,4 +213,3 @@ def check_pointless_wrapper(ctx: FileContext) -> List[Issue]:
                 description="Layers of trivial forwarders are a hallmark of over-abstracted AI code."
             ))
     return issues
-

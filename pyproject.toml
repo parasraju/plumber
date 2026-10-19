@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "plumber-linter"
+version = "0.2.0"
+description = "Deterministic Code Leak, Clog, and AI Slop Inspector"
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.10"
+authors = [
+    { name = "Plumber Authors" }
+]
+keywords = ["linter", "ai-slop", "code-quality", "security", "secrets-detection", "mcp"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Quality Assurance",
+]
+dependencies = []
+
+[project.scripts]
+plumber = "plumber.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["plumber*", "api*"]

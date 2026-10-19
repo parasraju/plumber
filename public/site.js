@@ -208,6 +208,26 @@
   const statusArea = $("statusArea");
   const scanBtn = $("scanBtn");
   let isScanning = false;
+  let activeInterval = null;
+  let activeAbortController = null;
+
+  function resetScanState() {
+    isScanning = false;
+    if (activeInterval) {
+      clearInterval(activeInterval);
+      activeInterval = null;
+    }
+    if (activeAbortController) {
+      activeAbortController = null;
+    }
+    if (scanBtn) scanBtn.disabled = false;
+    if (statusArea) statusArea.innerHTML = "";
+  }
+
+  // Handle browser Back / Forward cache (bfcache) navigation
+  window.addEventListener("pageshow", () => {
+    resetScanState();
+  });
 
   async function triggerScan(slug) {
     if (isScanning) return;
@@ -217,17 +237,15 @@
     const started = Date.now();
     statusArea.innerHTML = `
       <div class="status-pill retro-status-pill">
-        <picture class="media-frame">
-          <source type="image/webp" srcset="/gifs/popcat.webp">
-          <img src="/gifs/popcat.gif" class="ticker-gif" alt="Inspecting code" width="24" height="24" decoding="async">
-        </picture>
+        <img src="/gifs/popcat.gif" class="ticker-gif" alt="Inspecting code" width="24" height="24">
         <span class="spinner retro-spinner" aria-hidden="true"></span>
         <span id="scanTimerLabel">Connecting to GitHub CDN... 0s</span>
       </div>
     `;
 
     const timerLabel = $("scanTimerLabel");
-    const interval = setInterval(() => {
+    if (activeInterval) clearInterval(activeInterval);
+    activeInterval = setInterval(() => {
       const secs = Math.round((Date.now() - started) / 1000);
       const stage = secs < 3 ? "Streaming repository tarball..." : secs < 6 ? "Sandboxed extraction..." : "Inspecting code leaks & slop...";
       if (timerLabel) {
@@ -236,6 +254,7 @@
     }, 1000);
 
     const controller = new AbortController();
+    activeAbortController = controller;
     const abortTimeout = setTimeout(() => controller.abort(), 65000);
 
     try {
@@ -247,10 +266,18 @@
       }
 
       store.set("plumber-last-repo", slug);
+
+      // Clean up scanning timers and state before navigating so bfcache retains an active form
+      clearInterval(activeInterval);
+      activeInterval = null;
+      isScanning = false;
+      if (scanBtn) scanBtn.disabled = false;
+
       // Route to the cached report
       location.href = `/r/${slug}`;
     } catch (err) {
-      clearInterval(interval);
+      clearInterval(activeInterval);
+      activeInterval = null;
       clearTimeout(abortTimeout);
       isScanning = false;
       if (scanBtn) scanBtn.disabled = false;
@@ -285,12 +312,12 @@
   // 9. Sample Repository Chips Click Handler (populates repository input)
   document.querySelectorAll("[data-sample]").forEach((pill) => {
     pill.addEventListener("click", () => {
+      resetScanState();
       const slug = pill.dataset.sample;
       if (input) {
         input.value = slug;
         input.focus();
       }
-      if (statusArea) statusArea.innerHTML = "";
     });
   });
 })();

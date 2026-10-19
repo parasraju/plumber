@@ -46,10 +46,14 @@ EYEBROW_BADGE = re.compile(
     "Replace with your project's brand design system tokens or a clean neutral surface."
 )
 def check_ai_gradient(ctx: FileContext) -> List[Issue]:
-    issues = []
-    if not (ctx.is_markup or ctx.is_style or ctx.is_script):
+    if not (ctx.is_markup or ctx.is_style):
         return []
 
+    lower = ctx.content.lower()
+    if not any(k in lower for k in ("purple", "violet", "indigo", "fuchsia", "gradient", "#667eea", "#764ba2", "#a855f7")):
+        return []
+
+    issues = []
     for line_num, line in enumerate(ctx.lines, 1):
         # Tailwind
         tw_purples = TW_AI_PURPLE.findall(line)
@@ -93,6 +97,13 @@ def check_ai_gradient(ctx: FileContext) -> List[Issue]:
     "Use subtle crisp 1px borders (e.g., #262626 on dark, #e5e5e5 on light) instead of heavy neon blurs."
 )
 def check_neon_glow(ctx: FileContext) -> List[Issue]:
+    if not (ctx.is_markup or ctx.is_style):
+        return []
+    if "shadow" not in ctx.content.lower():
+        return []
+    if not NEON_GLOW.search(ctx.content):
+        return []
+
     issues = []
     for line_num, line in enumerate(ctx.lines, 1):
         if NEON_GLOW.search(line):
@@ -119,6 +130,12 @@ def check_neon_glow(ctx: FileContext) -> List[Issue]:
     "Delete conversational boilerplate and retain only technical instructions."
 )
 def check_chatbot_residue(ctx: FileContext) -> List[Issue]:
+    lower = ctx.content.lower()
+    if not any(k in lower for k in ("as an ai", "here is the", "certainly!", "hope this helps", "let me know")):
+        return []
+    if not CHATBOT_RESIDUE.search(ctx.content):
+        return []
+
     issues = []
     for line_num, line in enumerate(ctx.lines, 1):
         match = CHATBOT_RESIDUE.search(line)
@@ -146,6 +163,13 @@ def check_chatbot_residue(ctx: FileContext) -> List[Issue]:
     "Use solid, high-contrast typography with a bold/semibold weight for clarity and accessibility."
 )
 def check_gradient_text(ctx: FileContext) -> List[Issue]:
+    if not (ctx.is_markup or ctx.is_style):
+        return []
+    if "clip" not in ctx.content.lower():
+        return []
+    if not GRADIENT_TEXT.search(ctx.content):
+        return []
+
     issues = []
     for line_num, line in enumerate(ctx.lines, 1):
         if GRADIENT_TEXT.search(line):
@@ -172,9 +196,12 @@ def check_gradient_text(ctx: FileContext) -> List[Issue]:
     "Remove !important and structure CSS cascade order cleanly."
 )
 def check_important_abuse(ctx: FileContext) -> List[Issue]:
-    issues = []
     if not (ctx.is_style or ctx.is_markup):
         return []
+    if "!important" not in ctx.content:
+        return []
+
+    issues = []
     for line_num, line in enumerate(ctx.lines, 1):
         if "!important" in line:
             issues.append(Issue(
@@ -189,4 +216,3 @@ def check_important_abuse(ctx: FileContext) -> List[Issue]:
                 description="Piles of !important mean styles are fighting each other."
             ))
     return issues
-

@@ -1,0 +1,46 @@
+name: Plumber Code Leak & Slop Inspector
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  inspect:
+    name: Plumber Quality Audit
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install Plumber
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+
+      - name: Run Test Suite
+        run: |
+          python -m unittest discover tests
+
+      - name: Run Plumber Inspection
+        run: |
+          # Output pretty report to console
+          plumber scan . --format pretty
+
+      - name: Generate GitHub Step Summary
+        if: always()
+        run: |
+          echo "## 🪠 Plumber Inspection Report" >> $GITHUB_STEP_SUMMARY
+          plumber scan . --format md >> $GITHUB_STEP_SUMMARY
+
+      - name: Enforce CI Quality Gate (Fail on High/Critical)
+        run: |
+          plumber scan . --fail-on high

@@ -1,0 +1,36 @@
+# Cursor Rules for Plumber & Clean Code Standards
+
+You are working on a project inspected by Plumber, a deterministic linter preventing AI slop, secret leaks, and fragile code joints.
+
+## Strict Code Standards
+
+1. NEVER write placeholder elisions:
+   - Do NOT write `// ... existing code ...`, `# ... existing code ...`, or `/* rest of code */`.
+   - Always output full, unabridged code for functions you create or modify.
+
+2. NEVER swallow errors silently:
+   - Do NOT write `except: pass`, `except Exception: pass`, or `catch (err) {}`.
+   - Log errors explicitly with context or handle them with user feedback.
+
+3. NEVER hardcode API keys or secrets:
+   - Do NOT put OpenAI keys (`sk-...`), GitHub tokens (`ghp_...`), AWS keys (`AKIA...`), or passwords in code.
+   - Always read from environment variables (`os.getenv(...)` or `process.env[...]`).
+
+4. Semantic HTML and Accessible UI:
+   - Always use native `<button type="button">` instead of clickable `<div onClick=...>` or `<span onClick=...>`.
+   - Buttons containing only icons/SVGs MUST have an `aria-label` attribute.
+   - Do NOT strip focus outlines with `outline: none` without providing a visible focus indicator (`:focus-visible`).
+
+5. Design System & Anti-Slop:
+   - Avoid default AI purple-to-pink gradients (`bg-gradient-to-r from-purple-600 via-pink-500 to-red-500`).
+   - Use clean monochromatic neutrals, high-contrast borders, and curated brand tokens.
+   - Avoid multi-layer neon blur glow shadows; use subtle 1px borders instead.
+
+6. Testing Integrity:
+   - Unit tests must contain actual assertions (`assert`, `self.assertEqual`, `expect()`). Never create empty test stubs that always pass.
+
+## Verification
+You can audit your changes at any time by running:
+```bash
+plumber scan .
+```

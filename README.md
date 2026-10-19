@@ -34,26 +34,39 @@ Features:
 - **Exporting**: Download results as **Markdown**, **JSON**, **CSV**, or **Print/PDF**.
 - **AI Agent Fix Briefs**: Single-click copyable prompt for Claude Code, Codex, or Cursor to resolve all findings.
 
-### 2. Run the CLI Locally
+### 2. Run the Terminal CLI
+Install Plumber in editable mode to use the `plumber` command directly from any terminal:
 ```bash
+pip install -e .
+
 # Inspect the current repository
-python -m plumber scan .
+plumber scan .
 
 # Stream and inspect any public GitHub repo directly in your terminal
-python -m plumber scan pallets/flask
+plumber scan pallets/flask
+plumber scan fastapi/fastapi
 
-# Export report in JSON or Markdown
-python -m plumber scan . --format json
-python -m plumber scan . --format md
+# Export report in JSON, Markdown, or CSV
+plumber scan . --format json
+plumber scan . --format md
 
 # Enforce in CI (exits with code 1 if issues >= HIGH exist)
-python -m plumber scan . --fail-on high
+plumber scan . --fail-on high
 
 # View registered rule catalogue
-python -m plumber rules
+plumber rules
 ```
 
-### 3. Deploy to Vercel
+### 3. Integrations (Claude Code & Cursor)
+
+#### 🤖 Claude Code
+Plumber includes [`CLAUDE.md`](CLAUDE.md) at the repository root. Claude Code will automatically detect it and adhere to Plumber's anti-slop, secret leak, and code quality standards. You can instruct Claude:
+> *"Run `npx plumber-linter scan . --fail-on high` and resolve all findings."*
+
+#### ⚡ Cursor
+Plumber includes [`.cursorrules`](.cursorrules) and [`.cursor/rules/plumber.mdc`](.cursor/rules/plumber.mdc). Cursor will automatically prevent AI code elisions (`// ... existing code ...`), swallowed exceptions, and inaccessible UI components. Run `npx plumber-linter scan .` in terminal to audit your changes.
+
+### 4. Deploy to Vercel
 The repository includes a ready-to-deploy [`vercel.json`](vercel.json) and serverless handlers in [`api/`](api/):
 ```bash
 npm i -g vercel

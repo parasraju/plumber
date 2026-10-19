@@ -11,10 +11,10 @@ import urllib.error
 import urllib.request
 from pathlib import Path, PurePosixPath
 from urllib.parse import quote
-from typing import Tuple, Optional, Dict
+from typing import Tuple, Optional, Dict, List
 
 from plumber.core.models import ScanReport
-from plumber.core.engine import PlumberEngine, SKIP_DIRS
+from plumber.core.engine import PlumberEngine, SKIP_DIRS, SCANNABLE_EXTS
 
 MAX_DOWNLOAD = 60 * 1024 * 1024       # 60MB compressed
 MAX_EXTRACTED = 250 * 1024 * 1024     # 250MB extracted
@@ -101,8 +101,69 @@ def download_tarball(owner: str, repo: str) -> bytes:
     return data
 
 
+def extract_tarball_in_memory(archive: bytes) -> Tuple[str, List[Tuple[str, str]]]:
+    """Extracts scannable files from tarball directly in memory without disk writes."""
+    files_count = 0
+    total_bytes = 0
+    file_items: List[Tuple[str, str]] = []
+
+    with tarfile.open(fileobj=io.BytesIO(archive), mode="r:gz") as tar:
+        for member in tar:
+            if not member.isfile():
+                continue
+
+            parts = PurePosixPath(member.name).parts[1:]  # Drop root folder
+            if not parts or any(p in ("..", "") or p.startswith("/") or ":" in p for p in parts):
+                continue
+            if any(p in SKIP_DIRS for p in parts[:-1]):
+                continue
+
+            filename = parts[-1]
+            ext = Path(filename).suffix.lower()
+            if filename.startswith(".env"):
+                ext = ".env"
+
+            if ext not in SCANNABLE_EXTS and not filename.startswith(".env"):
+                continue
+
+            files_count += 1
+            if files_count > MAX_FILES:
+                raise FetchError(
+                    413,
+                    "Repository exceeds 25,000 files limit.",
+                    "Run Plumber locally to scan very large repositories."
+                )
+
+            if member.size > MAX_SINGLE_FILE:
+                continue
+
+            source = tar.extractfile(member)
+            if not source:
+                continue
+            chunk = source.read()
+            total_bytes += len(chunk)
+            if total_bytes > MAX_EXTRACTED:
+                raise FetchError(
+                    413,
+                    "Extracted contents exceed 250MB limit.",
+                    "Run Plumber locally for huge projects."
+                )
+
+            try:
+                content = chunk.decode("utf-8", errors="ignore")
+                rel_path = "/".join(parts)
+                file_items.append((rel_path, content))
+            except Exception:
+                continue
+
+        commit = str(tar.pax_headers.get("comment", "")) if hasattr(tar, "pax_headers") else ""
+
+    commit_sha = commit[:40] if re.fullmatch(r"[0-9a-f]{40}", commit) else ""
+    return commit_sha, file_items
+
+
 def extract_tarball_safely(archive: bytes, dest: Path) -> str:
-    """Safely unpacks tarball enforcing sandbox, file limits, and traversal protection."""
+    """Safely unpacks tarball enforcing sandbox, file limits, and traversal protection to disk."""
     files_count = 0
     written_bytes = 0
 
@@ -149,7 +210,7 @@ def extract_tarball_safely(archive: bytes, dest: Path) -> str:
 
 
 def scan_github_repo(owner: str, repo: str) -> ScanReport:
-    """End-to-end download, sandbox extraction, inspection, and cleanup."""
+    """End-to-end download, in-memory stream extraction, inspection, and cleanup."""
     cache_key = (owner.lower(), repo.lower())
     now = time.monotonic()
     if cache_key in _SCAN_CACHE:
@@ -158,16 +219,10 @@ def scan_github_repo(owner: str, repo: str) -> ScanReport:
             return cached_rep
 
     archive = download_tarball(owner, repo)
-    temp_dir = Path(tempfile.mkdtemp(prefix="plumber-"))
-    try:
-        dest_repo_dir = temp_dir / repo
-        dest_repo_dir.mkdir(parents=True, exist_ok=True)
-        commit = extract_tarball_safely(archive, dest_repo_dir)
-        del archive  # Release memory
+    commit, file_items = extract_tarball_in_memory(archive)
+    del archive  # Release memory
 
-        engine = PlumberEngine()
-        report = engine.scan_directory(dest_repo_dir, repo_name=repo, owner=owner, commit=commit)
-        _SCAN_CACHE[cache_key] = (now, report)
-        return report
-    finally:
-        shutil.rmtree(temp_dir, ignore_errors=True)
+    engine = PlumberEngine()
+    report = engine.scan_files(file_items, repo_name=repo, owner=owner, commit=commit)
+    _SCAN_CACHE[cache_key] = (now, report)
+    return report

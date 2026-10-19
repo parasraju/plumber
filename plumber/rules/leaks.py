@@ -16,10 +16,14 @@ API_KEY_PATTERNS = [
     (re.compile(r'(?:api[_-]?key|secret[_-]?key|access[_-]?token)\s*[:=]\s*["\']([a-zA-Z0-9_\-]{24,})["\']', re.IGNORECASE), "Generic Hardcoded Secret"),
 ]
 
+API_KEY_HINTS = ("sk-", "ghp_", "gho_", "akia", "xox", "sq0csp", "api_key", "apikey", "secret_key", "access_token")
+
 PASSWORD_PATTERN = re.compile(
     r'(?:password|passwd|db_pass|secret)\s*[:=]\s*["\']([^"\'\s]{6,})["\']',
     re.IGNORECASE
 )
+
+RAW_HTML_RE = re.compile(r'(?:\.innerHTML\s*=|dangerouslySetInnerHTML|\|\s*safe\b|document\.write\()')
 
 
 @register_rule(
@@ -31,10 +35,15 @@ PASSWORD_PATTERN = re.compile(
     "Move this secret to an environment variable (.env / secret manager) and immediately revoke this exposed key."
 )
 def check_api_keys(ctx: FileContext) -> List[Issue]:
-    issues = []
     if ctx.is_test:
         return []
 
+    # Fast substring pre-check on whole content
+    lower_content = ctx.content.lower()
+    if not any(h in lower_content for h in API_KEY_HINTS):
+        return []
+
+    issues = []
     for line_num, line in enumerate(ctx.lines, 1):
         lower = line.lower()
         if any(w in lower for w in ("your_", "insert_", "<key>", "example", "dummy", "placeholder", "fake", "redact", "mask", "assert", "monkeypatch", "pattern", "regex")):
@@ -69,12 +78,17 @@ def check_api_keys(ctx: FileContext) -> List[Issue]:
     "Use textContent, safe DOM creation, or framework auto-escaping instead of raw HTML insertion."
 )
 def check_raw_html(ctx: FileContext) -> List[Issue]:
-    issues = []
-    if ctx.is_test:
+    if ctx.is_test or not (ctx.is_markup or ctx.is_script):
         return []
-    raw_html_re = re.compile(r'(?:\.innerHTML\s*=|dangerouslySetInnerHTML|\|\s*safe\b|document\.write\()')
+
+    if not ("innerHTML" in ctx.content or "dangerouslySetInnerHTML" in ctx.content or "safe" in ctx.content or "document.write" in ctx.content):
+        return []
+    if not RAW_HTML_RE.search(ctx.content):
+        return []
+
+    issues = []
     for line_num, line in enumerate(ctx.lines, 1):
-        if raw_html_re.search(line):
+        if RAW_HTML_RE.search(line):
             issues.append(Issue(
                 rule_id="sec/raw-html",
                 title="Raw HTML Injection (XSS Risk)",
@@ -98,10 +112,16 @@ def check_raw_html(ctx: FileContext) -> List[Issue]:
     "Replace hardcoded credential with process.env / os.environ reference."
 )
 def check_hardcoded_passwords(ctx: FileContext) -> List[Issue]:
-    issues = []
     if ctx.is_test:
         return []
 
+    lower_content = ctx.content.lower()
+    if not any(k in lower_content for k in ("password", "passwd", "db_pass", "secret")):
+        return []
+    if not PASSWORD_PATTERN.search(ctx.content):
+        return []
+
+    issues = []
     for line_num, line in enumerate(ctx.lines, 1):
         if "EXAMPLE" in line.upper() or "PLACEHOLDER" in line.upper() or "DUMMY" in line.upper():
             continue
@@ -134,10 +154,10 @@ def check_hardcoded_passwords(ctx: FileContext) -> List[Issue]:
     "Remove sensitive values, add .env to .gitignore, and provide .env.example with dummy values."
 )
 def check_env_file(ctx: FileContext) -> List[Issue]:
-    issues = []
     if not (ctx.filename.startswith(".env") and not ctx.filename.endswith((".example", ".sample", ".template"))):
         return []
 
+    issues = []
     for line_num, line in enumerate(ctx.lines, 1):
         clean = line.strip()
         if not clean or clean.startswith("#"):

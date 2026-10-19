@@ -21,6 +21,8 @@ ICON_BUTTON_EMPTY = re.compile(
     re.IGNORECASE
 )
 
+TEST_FUNC_RE = re.compile(r'^\s*def\s+(test_\w+)\s*\([^)]*\):')
+
 
 @register_rule(
     "joint/icon-button",
@@ -31,11 +33,17 @@ ICON_BUTTON_EMPTY = re.compile(
     "Add an aria-label attribute describing the action for screen readers."
 )
 def check_icon_button(ctx: FileContext) -> List[Issue]:
-    issues = []
-    if not (ctx.is_markup or ctx.is_script):
+    # Buttons only occur in markup or JSX/TSX templates
+    if not ctx.is_markup:
         return []
+    if "<button" not in ctx.content.lower():
+        return []
+    if not ICON_BUTTON_EMPTY.search(ctx.content):
+        return []
+
+    issues = []
     for line_num, line in enumerate(ctx.lines, 1):
-        if ICON_BUTTON_EMPTY.search(line):
+        if "<button" in line.lower() and ICON_BUTTON_EMPTY.search(line):
             issues.append(Issue(
                 rule_id="joint/icon-button",
                 title="Icon Button Without Accessible Name",
@@ -50,7 +58,6 @@ def check_icon_button(ctx: FileContext) -> List[Issue]:
     return issues
 
 
-
 @register_rule(
     "joint/clickable-div",
     "Non-Semantic Clickable Element (Missing Button / Role)",
@@ -60,12 +67,17 @@ def check_icon_button(ctx: FileContext) -> List[Issue]:
     "Use a native <button type='button'> instead of a clickable div or span."
 )
 def check_clickable_div(ctx: FileContext) -> List[Issue]:
-    issues = []
-    if not (ctx.is_markup or ctx.is_script):
+    if not ctx.is_markup:
+        return []
+    lower = ctx.content.lower()
+    if ("<div" not in lower and "<span" not in lower) or "onclick" not in lower:
+        return []
+    if not CLICKABLE_DIV.search(ctx.content):
         return []
 
+    issues = []
     for line_num, line in enumerate(ctx.lines, 1):
-        if CLICKABLE_DIV.search(line):
+        if "onclick" in line.lower() and CLICKABLE_DIV.search(line):
             issues.append(Issue(
                 rule_id="joint/clickable-div",
                 title="Clickable <div> or <span> Without Semantic Role",
@@ -89,9 +101,16 @@ def check_clickable_div(ctx: FileContext) -> List[Issue]:
     "Provide a visible :focus-visible style with sufficient contrast (e.g., focus-visible:ring-2)."
 )
 def check_focus_removed(ctx: FileContext) -> List[Issue]:
+    if not (ctx.is_style or ctx.is_markup):
+        return []
+    if "outline" not in ctx.content.lower():
+        return []
+    if not OUTLINE_NONE.search(ctx.content):
+        return []
+
     issues = []
     for line_num, line in enumerate(ctx.lines, 1):
-        if OUTLINE_NONE.search(line):
+        if "outline" in line.lower() and OUTLINE_NONE.search(line):
             # Check if focus ring is also added on the same line
             if "focus:" in line or "focus-visible:" in line or "box-shadow" in line:
                 continue
@@ -118,50 +137,49 @@ def check_focus_removed(ctx: FileContext) -> List[Issue]:
     "Add assertions verifying state, response, or output."
 )
 def check_empty_tests(ctx: FileContext) -> List[Issue]:
-    issues = []
-    if not ctx.is_test:
+    if not ctx.is_test or ctx.ext != ".py":
+        return []
+    if "def test_" not in ctx.content:
         return []
 
-    # Check for python test methods without assert
-    if ctx.ext == ".py":
-        test_func_re = re.compile(r'^\s*def\s+(test_\w+)\s*\([^)]*\):')
-        current_test = None
-        current_line = 0
-        has_assert = False
+    issues = []
+    current_test = None
+    current_line = 0
+    has_assert = False
 
-        for line_num, line in enumerate(ctx.lines, 1):
-            m = test_func_re.match(line)
-            if m:
-                if current_test and not has_assert:
-                    issues.append(Issue(
-                        rule_id="joint/empty-test",
-                        title=f"Test '{current_test}' Has No Assertions",
-                        severity=HIGH,
-                        category=CAT_JOINTS,
-                        file_path=ctx.path,
-                        line=current_line,
-                        evidence=f"def {current_test}(...)",
-                        fix="Add assert statements or remove this placeholder test.",
-                        description="Tests without assertions always pass, creating false confidence."
-                    ))
-                current_test = m.group(1)
-                current_line = line_num
-                has_assert = False
-            elif current_test:
-                if "assert " in line or "AssertionError" in line or "self.assert" in line or "pytest.raises" in line:
-                    has_assert = True
+    for line_num, line in enumerate(ctx.lines, 1):
+        m = TEST_FUNC_RE.match(line)
+        if m:
+            if current_test and not has_assert:
+                issues.append(Issue(
+                    rule_id="joint/empty-test",
+                    title=f"Test '{current_test}' Has No Assertions",
+                    severity=HIGH,
+                    category=CAT_JOINTS,
+                    file_path=ctx.path,
+                    line=current_line,
+                    evidence=f"def {current_test}(...)",
+                    fix="Add assert statements or remove this placeholder test.",
+                    description="Tests without assertions always pass, creating false confidence."
+                ))
+            current_test = m.group(1)
+            current_line = line_num
+            has_assert = False
+        elif current_test:
+            if "assert " in line or "AssertionError" in line or "self.assert" in line or "pytest.raises" in line:
+                has_assert = True
 
-        if current_test and not has_assert:
-            issues.append(Issue(
-                rule_id="joint/empty-test",
-                title=f"Test '{current_test}' Has No Assertions",
-                severity=HIGH,
-                category=CAT_JOINTS,
-                file_path=ctx.path,
-                line=current_line,
-                evidence=f"def {current_test}(...)",
-                fix="Add assert statements or remove this placeholder test.",
-                description="Tests without assertions always pass, creating false confidence."
-            ))
+    if current_test and not has_assert:
+        issues.append(Issue(
+            rule_id="joint/empty-test",
+            title=f"Test '{current_test}' Has No Assertions",
+            severity=HIGH,
+            category=CAT_JOINTS,
+            file_path=ctx.path,
+            line=current_line,
+            evidence=f"def {current_test}(...)",
+            fix="Add assert statements or remove this placeholder test.",
+            description="Tests without assertions always pass, creating false confidence."
+        ))
 
     return issues

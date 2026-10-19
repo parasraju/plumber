@@ -4,8 +4,9 @@ Plumber core inspection engine.
 import os
 import time
 from pathlib import Path
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Tuple
 from datetime import datetime
+from concurrent.futures import ThreadPoolExecutor
 
 from plumber.core.models import (
     Issue, FileReport, ScanReport
@@ -70,15 +71,61 @@ class PlumberEngine:
 
         return FileReport(path=ctx.path, issues=issues, line_count=len(ctx.lines))
 
+    def scan_files(
+        self,
+        file_items: List[Tuple[str, str]],
+        repo_name: str = "",
+        owner: str = "",
+        commit: str = "",
+        started_time: Optional[float] = None
+    ) -> ScanReport:
+        """Inspects in-memory list of (rel_path, content) using a thread pool."""
+        started = started_time if started_time is not None else time.monotonic()
+        file_reports: List[FileReport] = []
+        all_issues: List[Issue] = []
+        total_lines = 0
+
+        # Scan files concurrently across threads
+        max_workers = min(32, (os.cpu_count() or 4) * 2)
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            reports = list(executor.map(lambda item: self.scan_file_content(item[0], item[1]), file_items))
+
+        for rep in reports:
+            total_lines += rep.line_count
+            if rep.issues:
+                file_reports.append(rep)
+                all_issues.extend(rep.issues)
+
+        duration = time.monotonic() - started
+        score = calculate_score(all_issues, total_lines)
+        grade = calculate_grade(score)
+        sev_counts, cat_counts = summarize_counts(all_issues)
+        brief = generate_agent_brief(repo_name, score, grade, file_reports)
+
+        return ScanReport(
+            repo_name=repo_name,
+            owner=owner,
+            commit=commit,
+            timestamp=datetime.now().strftime("%Y-%m-%d %H:%M"),
+            total_files=len(file_reports),
+            total_lines=total_lines,
+            duration_seconds=duration,
+            score=score,
+            grade=grade,
+            issues=all_issues,
+            file_reports=file_reports,
+            counts_by_severity=sev_counts,
+            counts_by_category=cat_counts,
+            brief=brief
+        )
+
     def scan_directory(self, root_dir: Path, repo_name: str = "", owner: str = "", commit: str = "") -> ScanReport:
         started = time.monotonic()
         root_dir = Path(root_dir)
         if not repo_name:
             repo_name = root_dir.name
 
-        file_reports: List[FileReport] = []
-        all_issues: List[Issue] = []
-        total_lines = 0
+        file_items: List[Tuple[str, str]] = []
 
         for root, dirs, files in os.walk(root_dir):
             dirs[:] = [d for d in dirs if d not in SKIP_DIRS and not d.startswith(".")]
@@ -105,31 +152,6 @@ class PlumberEngine:
                 except ValueError:
                     rel = file_path.name
 
-                rep = self.scan_file_content(rel, content)
-                total_lines += rep.line_count
-                if rep.issues:
-                    file_reports.append(rep)
-                    all_issues.extend(rep.issues)
+                file_items.append((rel, content))
 
-        duration = time.monotonic() - started
-        score = calculate_score(all_issues, total_lines)
-        grade = calculate_grade(score)
-        sev_counts, cat_counts = summarize_counts(all_issues)
-        brief = generate_agent_brief(repo_name, score, grade, file_reports)
-
-        return ScanReport(
-            repo_name=repo_name,
-            owner=owner,
-            commit=commit,
-            timestamp=datetime.now().strftime("%Y-%m-%d %H:%M"),
-            total_files=len(file_reports),
-            total_lines=total_lines,
-            duration_seconds=duration,
-            score=score,
-            grade=grade,
-            issues=all_issues,
-            file_reports=file_reports,
-            counts_by_severity=sev_counts,
-            counts_by_category=cat_counts,
-            brief=brief
-        )
+        return self.scan_files(file_items, repo_name=repo_name, owner=owner, commit=commit, started_time=started)

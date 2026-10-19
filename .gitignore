@@ -48,3 +48,7 @@ Thumbs.db
 *.swo
 .idea/
 .vscode/
+gifs_original_backup/
+.wrangler/
+node_modules/
+

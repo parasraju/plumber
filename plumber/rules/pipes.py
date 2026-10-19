@@ -23,6 +23,8 @@ STANDARD_BUILTINS_PY = {
     "copy", "socket", "struct", "base64", "uuid", "abc", "inspect", "csv"
 }
 
+DEAD_LINK_RE = re.compile(r'<a\s+[^>]*href=["\'](?:#|javascript:void\(0\);?)["\']', re.IGNORECASE)
+
 
 @register_rule(
     "pipe/phantom-import",
@@ -33,10 +35,16 @@ STANDARD_BUILTINS_PY = {
     "Verify whether this package actually exists on npm/PyPI or replace with standard library/official package."
 )
 def check_phantom_imports(ctx: FileContext) -> List[Issue]:
-    issues = []
     if not ctx.is_script:
         return []
 
+    # Fast pre-check: skip if neither known hallucinations nor pytest appear
+    has_hallucination = any(h in ctx.content for h in KNOWN_HALLUCINATIONS)
+    has_pytest_in_test = ctx.is_test and "pytest" in ctx.content
+    if not (has_hallucination or has_pytest_in_test):
+        return []
+
+    issues = []
     for line_num, line in enumerate(ctx.lines, 1):
         clean = line.strip()
         # Python
@@ -84,13 +92,20 @@ def check_phantom_imports(ctx: FileContext) -> List[Issue]:
     "Replace dummy href with a valid route or convert the element to a semantic <button>."
 )
 def check_dead_links(ctx: FileContext) -> List[Issue]:
-    issues = []
-    if not (ctx.is_markup or ctx.is_script):
+    if not ctx.is_markup:
         return []
 
-    dead_link_re = re.compile(r'<a\s+[^>]*href=["\'](?:#|javascript:void\(0\);?)["\']', re.IGNORECASE)
+    lower = ctx.content.lower()
+    if "<a" not in lower:
+        return []
+    if "href=\"#\"" not in lower and "href='#'" not in lower and "javascript:void" not in lower:
+        return []
+    if not DEAD_LINK_RE.search(ctx.content):
+        return []
+
+    issues = []
     for line_num, line in enumerate(ctx.lines, 1):
-        if dead_link_re.search(line):
+        if "<a" in line.lower() and DEAD_LINK_RE.search(line):
             issues.append(Issue(
                 rule_id="pipe/dead-link",
                 title="Dead Link (href='#' or 'javascript:void(0)')",

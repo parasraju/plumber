@@ -1,0 +1,20 @@
+---
+description: Plumber Code Quality, Secret Leak, and Anti-Slop Enforcement
+globs: ["**/*"]
+alwaysApply: true
+---
+
+# Plumber Standards for Cursor
+
+## Non-Negotiable Rules
+- **No Code Elisions**: Never emit `// ... existing code ...` or similar truncation markers.
+- **No Silent Error Swallowing**: Never use `except: pass` or `catch {}`.
+- **Accessible Interactions**: Clickable elements must be `<button>` or have `role="button"` and keyboard handlers.
+- **Icon Buttons**: Must include `aria-label="..."`.
+- **Clean Styling**: Avoid generic purple-to-pink AI default gradients and neon blur glows.
+- **Secrets**: Zero hardcoded credentials. Use environment variables.
+
+## Run Plumber Audit
+```bash
+plumber scan . --fail-on high
+```

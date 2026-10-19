@@ -1,0 +1,29 @@
+{
+  "name": "plumber-linter",
+  "version": "1.0.2",
+  "description": "Deterministic Code Leak, Clog, and AI Slop Inspector for the AI-agent era",
+  "main": "bin/plumber.js",
+  "bin": {
+    "plumber": "bin/plumber.js",
+    "plumber-linter": "bin/plumber.js"
+  },
+  "keywords": [
+    "linter",
+    "ai-slop",
+    "mcp",
+    "mcp-server",
+    "code-quality",
+    "secrets-detection",
+    "claude-code",
+    "cursor"
+  ],
+  "author": "Paras Raju",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "files": [
+    "bin",
+    "README.md"
+  ]
+}

@@ -928,12 +928,11 @@ def render_html_report(report: ScanReport) -> str:
     }}
 
     [data-theme="dark"] .report-sky-zone {{
-      background-color: #0d1726;
+      background-color: #0b1220;
       background-image:
-        linear-gradient(to bottom, rgba(13, 23, 38, 0.4), rgba(13, 23, 38, 0.5)),
         image-set(
-          url("/sky_bg.webp") type("image/webp"),
-          url("/sky_bg.jpg") type("image/jpeg")
+          url("/night_sky_bg.webp") type("image/webp"),
+          url("/night_sky_bg.jpg") type("image/jpeg")
         );
     }}
 

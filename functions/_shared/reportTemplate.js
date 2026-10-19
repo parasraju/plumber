@@ -31,6 +31,7 @@ export function renderHtmlReport(report) {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="prefetch" href="/night_sky_bg.webp" as="image">
   <style>
     :root {
       --bg: #F4F3EF;
@@ -222,6 +223,8 @@ export function renderHtmlReport(report) {
     [data-theme="dark"] .report-sky-zone {
       border-color: rgba(255, 255, 255, 0.12);
       box-shadow: 0 16px 40px rgba(0, 0, 0, 0.35);
+      background-color: #0b1220;
+      background-image: image-set(url("/night_sky_bg.webp") type("image/webp"), url("/night_sky_bg.jpg") type("image/jpeg"));
     }
     @media (max-width: 640px) {
       .report-sky-zone {

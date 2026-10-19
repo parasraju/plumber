@@ -10,6 +10,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/site.css">
+  <link rel="prefetch" href="/night_sky_bg.webp" as="image">
   <script src="/site.js" defer></script>
 </head>
 <body>
@@ -44,47 +45,14 @@
   <section class="hero-stage">
     <!-- Ambient Scattered Meme GIFs (Scattered across wide hero canvas) -->
     <div class="bg-gifs-container" aria-hidden="true">
-      <!-- Top Left -->
-      <picture class="media-frame">
-        <source type="image/webp" srcset="/gifs/flextape.webp">
-        <img src="/gifs/flextape.gif" class="bg-square-gif bg-gif-1" alt="Flex tape leak fix" width="76" height="76" loading="eager" fetchpriority="high" decoding="async">
-      </picture>
-      <!-- Upper Mid Left (High in upper blank space) -->
-      <picture class="media-frame">
-        <source type="image/webp" srcset="/gifs/spongebob-fire.webp">
-        <img src="/gifs/spongebob-fire.gif" class="bg-square-gif bg-gif-5" alt="Spongebob office fire" width="76" height="76" loading="eager" decoding="async">
-      </picture>
-      <!-- Mid Far Left -->
-      <picture class="media-frame">
-        <source type="image/webp" srcset="/gifs/this-is-fine.webp">
-        <img src="/gifs/this-is-fine.gif" class="bg-square-gif bg-gif-3" alt="This is fine" width="76" height="76" loading="lazy" decoding="async">
-      </picture>
-      <!-- Lower Left -->
-      <picture class="media-frame">
-        <source type="image/webp" srcset="/gifs/popcat.webp">
-        <img src="/gifs/popcat.gif" class="bg-square-gif bg-gif-7" alt="Popcat meme" width="76" height="76" loading="lazy" decoding="async">
-      </picture>
-
-      <!-- Top Right -->
-      <picture class="media-frame">
-        <source type="image/webp" srcset="/gifs/cat-typing.webp">
-        <img src="/gifs/cat-typing.gif" class="bg-square-gif bg-gif-2" alt="Cat typing code" width="76" height="76" loading="eager" decoding="async">
-      </picture>
-      <!-- Upper Mid Right (High in upper blank space) -->
-      <picture class="media-frame">
-        <source type="image/webp" srcset="/gifs/bongo-cat.webp">
-        <img src="/gifs/bongo-cat.gif" class="bg-square-gif bg-gif-6" alt="Bongo cat coding" width="76" height="76" loading="eager" decoding="async">
-      </picture>
-      <!-- Mid Far Right -->
-      <picture class="media-frame">
-        <source type="image/webp" srcset="/gifs/mario-pipe.webp">
-        <img src="/gifs/mario-pipe.gif" class="bg-square-gif bg-gif-4" alt="Mario plumber pipe" width="76" height="76" loading="lazy" decoding="async">
-      </picture>
-      <!-- Lower Right -->
-      <picture class="media-frame">
-        <source type="image/webp" srcset="/gifs/monkey-developer.webp">
-        <img src="/gifs/monkey-developer.gif" class="bg-square-gif bg-gif-8" alt="Monkey developer" width="76" height="76" loading="lazy" decoding="async">
-      </picture>
+      <img src="/gifs/flextape.gif" class="bg-square-gif bg-gif-1" alt="Flex tape leak fix" width="76" height="76">
+      <img src="/gifs/spongebob-fire.gif" class="bg-square-gif bg-gif-5" alt="Spongebob office fire" width="76" height="76">
+      <img src="/gifs/this-is-fine.gif" class="bg-square-gif bg-gif-3" alt="This is fine" width="76" height="76">
+      <img src="/gifs/popcat.gif" class="bg-square-gif bg-gif-7" alt="Popcat meme" width="76" height="76">
+      <img src="/gifs/cat-typing.gif" class="bg-square-gif bg-gif-2" alt="Cat typing code" width="76" height="76">
+      <img src="/gifs/bongo-cat.gif" class="bg-square-gif bg-gif-6" alt="Bongo cat coding" width="76" height="76">
+      <img src="/gifs/mario-pipe.gif" class="bg-square-gif bg-gif-4" alt="Mario plumber pipe" width="76" height="76">
+      <img src="/gifs/monkey-developer.gif" class="bg-square-gif bg-gif-8" alt="Monkey developer" width="76" height="76">
     </div>
 
     <div class="container" style="position:relative; z-index: 10;">
@@ -123,22 +91,10 @@
     <section class="content-section" id="inspects">
       <!-- Ambient Section Background GIFs (Pure square GIFs, zero layout behind) -->
       <div class="section-ambient-stickers" aria-hidden="true">
-      <picture class="media-frame">
-        <source type="image/webp" srcset="/gifs/dumpster-fire.webp">
-        <img src="/gifs/dumpster-fire.gif" class="bg-square-gif ambient-sticker-tl" alt="Dumpster fire" width="76" height="76" loading="lazy" decoding="async">
-      </picture>
-      <picture class="media-frame">
-        <source type="image/webp" srcset="/gifs/anime-hacker.webp">
-        <img src="/gifs/anime-hacker.gif" class="bg-square-gif ambient-sticker-tr" alt="Anime hacker" width="76" height="76" loading="lazy" decoding="async">
-      </picture>
-      <picture class="media-frame">
-        <source type="image/webp" srcset="/gifs/anime-panic.webp">
-        <img src="/gifs/anime-panic.gif" class="bg-square-gif ambient-sticker-bl" alt="Anime panic" width="76" height="76" loading="lazy" decoding="async">
-      </picture>
-      <picture class="media-frame">
-        <source type="image/webp" srcset="/gifs/anime-coding.webp">
-        <img src="/gifs/anime-coding.gif" class="bg-square-gif ambient-sticker-br" alt="Anime coding" width="76" height="76" loading="lazy" decoding="async">
-      </picture>
+      <img src="/gifs/dumpster-fire.gif" class="bg-square-gif ambient-sticker-tl" alt="Dumpster fire" width="76" height="76">
+      <img src="/gifs/anime-hacker.gif" class="bg-square-gif ambient-sticker-tr" alt="Anime hacker" width="76" height="76">
+      <img src="/gifs/anime-panic.gif" class="bg-square-gif ambient-sticker-bl" alt="Anime panic" width="76" height="76">
+      <img src="/gifs/anime-coding.gif" class="bg-square-gif ambient-sticker-br" alt="Anime coding" width="76" height="76">
     </div>
 
     <div class="container" style="position:relative; z-index: 10;">
@@ -248,7 +204,7 @@
     <div class="container">
       <div class="section-header">
         <h2>run plumber everywhere</h2>
-        <p>Integrate directly into your terminal workflow or automated CI pipeline.</p>
+        <p>Integrate directly into your terminal, Claude Code, or Cursor workflow.</p>
       </div>
 
       <div class="pref-pane" data-tabs>
@@ -260,46 +216,26 @@
           </div>
           <button class="pref-tab" role="tab" id="tab-cli" aria-controls="panel-cli" aria-selected="true">Terminal CLI</button>
           <button class="pref-tab" role="tab" id="tab-claude" aria-controls="panel-claude" aria-selected="false">Claude Code</button>
-          <button class="pref-tab" role="tab" id="tab-cursor" aria-controls="panel-cursor" aria-selected="false">Cursor &amp; MCP</button>
-          <button class="pref-tab" role="tab" id="tab-ci" aria-controls="panel-ci" aria-selected="false">GitHub Actions</button>
+          <button class="pref-tab" role="tab" id="tab-cursor" aria-controls="panel-cursor" aria-selected="false">Cursor</button>
         </div>
 
         <div class="pref-content" id="panel-cli" role="tabpanel" aria-labelledby="tab-cli">
-          <p class="pref-desc">Inspect local directories or public repositories directly from your terminal:</p>
-          <div class="code-block"><pre>python -m plumber scan .                       # inspect current repo
-python -m plumber scan owner/repo              # stream and inspect GitHub repo
-python -m plumber scan . --format json         # export structured JSON report</pre></div>
+          <p class="pref-desc">Inspect local directories or public repositories directly from your terminal (zero install):</p>
+          <div class="code-block"><pre>npx plumber-linter scan .                      # inspect current repo
+npx plumber-linter scan owner/repo             # stream and inspect GitHub repo
+npx plumber-linter scan . --fail-on high       # enforce quality threshold</pre></div>
         </div>
 
         <div class="pref-content" id="panel-claude" role="tabpanel" aria-labelledby="tab-claude" hidden>
-          <p class="pref-desc">Configure Claude Code to automatically check modified files as it works:</p>
-          <div class="code-block"><pre># In your Claude Code settings or AGENTS.md
-python -m plumber scan . --fail-on high        # validates changed lines</pre></div>
+          <p class="pref-desc">Configure Claude Code to automatically audit modified files as it works:</p>
+          <div class="code-block"><pre># In your project's CLAUDE.md or prompt:
+npx plumber-linter scan . --fail-on high       # audits all changed files</pre></div>
         </div>
 
         <div class="pref-content" id="panel-cursor" role="tabpanel" aria-labelledby="tab-cursor" hidden>
-          <p class="pref-desc">Cursor rules and MCP integration configuration:</p>
-          <div class="code-block"><pre>{
-  "mcpServers": {
-    "plumber": {
-      "command": "python",
-      "args": ["-m", "plumber", "mcp"]
-    }
-  }
-}</pre></div>
-        </div>
-
-        <div class="pref-content" id="panel-ci" role="tabpanel" aria-labelledby="tab-ci" hidden>
-          <p class="pref-desc">Automate repository hygiene enforcement on pull requests:</p>
-          <div class="code-block"><pre># .github/workflows/plumber.yml
-name: Plumber Hygiene Audit
-on: [pull_request]
-jobs:
-  audit:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - run: python -m plumber scan . --fail-on high</pre></div>
+          <p class="pref-desc">Enforce Plumber anti-slop rules in Cursor with .cursorrules:</p>
+          <div class="code-block"><pre># In .cursorrules or Cursor chat prompt:
+npx plumber-linter scan .                      # verify code changes</pre></div>
         </div>
       </div>
     </section>
@@ -310,31 +246,22 @@ jobs:
     <section class="content-section" id="badge">
       <!-- Ambient Section Stickers (Anchored to section, natural scroll) -->
       <div class="section-ambient-stickers" aria-hidden="true">
-        <picture class="media-frame">
-          <source type="image/webp" srcset="/gifs/leak-water.webp">
-          <img src="/gifs/leak-water.gif" class="bg-square-gif ambient-sticker-left" alt="Water leak pipe" width="76" height="76" loading="lazy" decoding="async">
-        </picture>
-        <picture class="media-frame">
-          <source type="image/webp" srcset="/gifs/pipe-wrench.webp">
-          <img src="/gifs/pipe-wrench.gif" class="bg-square-gif ambient-sticker-right" alt="Pipe wrench tool" width="76" height="76" loading="lazy" decoding="async">
-        </picture>
+        <img src="/gifs/leak-water.gif" class="bg-square-gif ambient-sticker-left" alt="Water leak pipe" width="76" height="76">
+        <img src="/gifs/pipe-wrench.gif" class="bg-square-gif ambient-sticker-right" alt="Pipe wrench tool" width="76" height="76">
       </div>
 
       <div class="container">
         <div class="section-header">
           <div style="display:flex; align-items:center; gap:10px; justify-content:center;">
             <h2>add the plumber badge</h2>
-            <picture class="media-frame">
-              <source type="image/webp" srcset="/gifs/party-parrot.webp">
-              <img src="/gifs/party-parrot.gif" class="inline-gif" alt="Party Parrot Badge" width="28" height="28" loading="lazy" decoding="async">
-            </picture>
+            <img src="/gifs/party-parrot.gif" class="inline-gif" alt="Party Parrot Badge" width="28" height="28">
           </div>
           <p>Display your repository health grade in your project README.</p>
         </div>
 
         <div class="badge-card">
           <div class="badge-live-row">
-            <img id="badgePreview" src="/badge/pallets/flask" alt="Plumber Badge Preview" width="130" height="20">
+            <img id="badgePreview" src="/badge/pallets/flask" alt="Plumber Badge Preview" height="20" style="height:20px; width:auto; vertical-align:middle; display:inline-block;">
             <span class="sample-chip" id="badgeRepoLabel">pallets/flask</span>
           </div>
           <div class="code-block">
@@ -367,10 +294,7 @@ jobs:
       <button class="dialog-close-btn" id="closeAboutBtn" type="button" aria-label="Close dialog">✕</button>
     </div>
     <div class="dialog-body" style="text-align:center;">
-      <picture class="media-frame">
-        <source type="image/webp" srcset="/gifs/bongo-cat.webp">
-        <img src="/gifs/bongo-cat.gif" class="modal-gif" alt="Plumber Mascot" width="64" height="64" loading="lazy" decoding="async">
-      </picture>
+      <img src="/gifs/bongo-cat.gif" class="modal-gif" alt="Plumber Mascot" width="64" height="64">
       <h4>Plumber v1.0</h4>
       <p>A deterministic code leak, clog, and AI slop inspector for the modern agent era.</p>
       <p>Engineered without LLM dependencies for instantaneous execution, reproducible findings, and complete offline capability.</p>
@@ -387,10 +311,7 @@ jobs:
       <button class="dialog-close-btn" id="closeChangelogBtn" type="button" aria-label="Close dialog">✕</button>
     </div>
     <div class="dialog-body" style="text-align:center;">
-      <picture class="media-frame">
-        <source type="image/webp" srcset="/gifs/spongebob-fire.webp">
-        <img src="/gifs/spongebob-fire.gif" class="modal-gif" alt="Release Notes" width="64" height="64" loading="lazy" decoding="async">
-      </picture>
+      <img src="/gifs/spongebob-fire.gif" class="modal-gif" alt="Release Notes" width="64" height="64">
       <h4>Plumber 1.0.0</h4>
       <p style="font-family:var(--font-mono); font-size:12px; margin-bottom:12px; text-align:left;">• Clean, responsive code inspection interface<br>• Asymptotic density scoring curve (0 to 100)<br>• Pure Python streaming tarball sandbox<br>• Dynamic SVG badges &amp; AI fix brief generator</p>
       <button class="btn-utility" id="confirmChangelogBtn" type="button" style="width:100%; justify-content:center;">Close</button>

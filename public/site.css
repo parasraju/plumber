@@ -930,7 +930,13 @@ picture.media-frame {
 }
 
 [data-theme="dark"] .sky-zone {
-  filter: brightness(0.85) saturate(1.1);
+  background-color: #0b1220;
+  background-image:
+    image-set(
+      url("/night_sky_bg.webp") type("image/webp"),
+      url("/night_sky_bg.jpg") type("image/jpeg")
+    );
+  filter: none;
 }
 
 /* Sky Zone Typography (Luminous White Like Heyclicky Pricing) */

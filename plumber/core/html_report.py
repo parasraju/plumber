@@ -928,12 +928,13 @@ def render_html_report(report: ScanReport) -> str:
     }}
 
     [data-theme="dark"] .report-sky-zone {{
-      background-color: #0b1220;
+      background-color: #070b14 !important;
+      background-image: url("/night_sky_bg_v2.jpg") !important;
       background-image:
         image-set(
-          url("/night_sky_bg.webp") type("image/webp"),
-          url("/night_sky_bg.jpg") type("image/jpeg")
-        );
+          url("/night_sky_bg_v2.webp") type("image/webp"),
+          url("/night_sky_bg_v2.jpg") type("image/jpeg")
+        ) !important;
     }}
 
     /* Floating Frosted Pill Toolbar in Sky Zone */

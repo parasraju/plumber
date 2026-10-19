@@ -92,11 +92,12 @@ html, body {
 }
 
 [data-theme="dark"] body {
-  background-color: #0b1220;
+  background-color: #070b14;
+  background-image: url("/night_sky_bg_v2.jpg");
   background-image:
     image-set(
-      url("/night_sky_bg.webp") type("image/webp"),
-      url("/night_sky_bg.jpg") type("image/jpeg")
+      url("/night_sky_bg_v2.webp") type("image/webp"),
+      url("/night_sky_bg_v2.jpg") type("image/jpeg")
     );
   background-size: cover;
   background-position: center top;
@@ -283,7 +284,15 @@ a {
 }
 
 [data-theme="dark"] .hero-stage {
-  background: transparent;
+  background-color: #070b14;
+  background-image: url("/night_sky_bg_v2.jpg");
+  background-image:
+    image-set(
+      url("/night_sky_bg_v2.webp") type("image/webp"),
+      url("/night_sky_bg_v2.jpg") type("image/jpeg")
+    );
+  background-size: cover;
+  background-position: center top;
 }
 
 .hero-center {
@@ -982,8 +991,16 @@ picture.media-frame {
 }
 
 [data-theme="dark"] .sky-zone {
-  background: transparent;
-  filter: none;
+  background-color: #070b14 !important;
+  background-image: url("/night_sky_bg_v2.jpg") !important;
+  background-image:
+    image-set(
+      url("/night_sky_bg_v2.webp") type("image/webp"),
+      url("/night_sky_bg_v2.jpg") type("image/jpeg")
+    ) !important;
+  background-size: cover !important;
+  background-position: center top !important;
+  filter: none !important;
 }
 
 /* Sky Zone Typography (Luminous White Like Heyclicky Pricing) */

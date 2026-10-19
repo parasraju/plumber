@@ -874,6 +874,11 @@ def render_html_report(report: ScanReport) -> str:
        ========================================================================== */
     .report-sky-zone {{
       position: relative;
+      margin: 0 clamp(12px, 2.5vw, 32px) 32px;
+      border-radius: 20px;
+      overflow: hidden;
+      border: 1px solid var(--border);
+      box-shadow: 0 16px 40px rgba(0, 20, 60, 0.12);
       background-color: #2b77d9;
       background-image:
         image-set(
@@ -886,7 +891,6 @@ def render_html_report(report: ScanReport) -> str:
       background-repeat: no-repeat;
       padding: 32px 0 80px;
       min-height: 85vh;
-      overflow: hidden;
     }}
 
     /* Framer-Style Top Fade Transition (Hero Clean Canvas -> Sky) */
@@ -1077,58 +1081,108 @@ def render_html_report(report: ScanReport) -> str:
         position: static;
         max-height: 200px;
       }}
+      .sidebar-list {{
+        max-height: 150px;
+        overflow-y: auto;
+      }}
       .top-bar-inner {{
         height: auto;
-        padding: 10px 16px;
-        flex-wrap: wrap;
+        padding: 10px 14px;
+        flex-direction: column;
+        align-items: stretch;
+        gap: 10px;
       }}
       .top-bar-left {{
         width: 100%;
-        margin-bottom: 6px;
+        margin-bottom: 0;
         flex-wrap: wrap;
       }}
       .top-actions {{
         width: 100%;
         justify-content: flex-start;
-        flex-wrap: wrap;
+        display: flex;
         gap: 6px;
+      }}
+      .top-actions .btn-utility {{
+        flex: 1 1 0;
+        justify-content: center;
+        text-align: center;
+        min-height: 34px;
       }}
       .report-header {{
         flex-direction: column;
-        align-items: flex-start;
+        align-items: stretch;
+        gap: 14px;
       }}
       .report-header-right {{
         align-items: flex-start;
       }}
+      .score-card-pill {{
+        width: 100%;
+        justify-content: flex-start;
+      }}
+      .report-sky-zone {{
+        background-attachment: scroll;
+        margin: 0 6px 20px;
+        border-radius: 14px;
+        padding: 16px 0 32px;
+        min-height: auto;
+      }}
+      .toolbar {{
+        padding: 12px;
+        flex-direction: column;
+        align-items: stretch;
+        gap: 10px;
+      }}
+      .toolbar-left, .toolbar-right {{
+        width: 100%;
+      }}
+      .toolbar-chips {{
+        overflow-x: auto;
+        flex-wrap: nowrap;
+        -webkit-overflow-scrolling: touch;
+        padding-bottom: 4px;
+      }}
+      .toolbar-chips .sev-chip {{
+        flex-shrink: 0;
+      }}
+      .search-utility, .select-utility {{
+        font-size: 16px;
+      }}
     }}
 
     @media (max-width: 540px) {{
-      .top-bar-left {{
-        white-space: normal;
+      .top-actions {{
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 6px;
+      }}
+      .top-actions .btn-utility.btn-primary {{
+        grid-column: 1 / -1;
       }}
       .meta-text {{
         white-space: normal;
         display: block;
         margin-top: 2px;
-      }}
-      .top-actions {{
-        justify-content: flex-start;
-      }}
-      .top-actions .btn-utility {{
-        flex: 1 1 auto;
-        min-height: 38px;
-      }}
-      .toolbar-left, .toolbar-right {{
         width: 100%;
+      }}
+      .toolbar-right {{
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
       }}
       .search-utility {{
         width: 100%;
       }}
       .select-utility {{
-        flex: 1;
-      }}
-      .score-box {{
         width: 100%;
+      }}
+      .report-footer-inner {{
+        flex-direction: column;
+        align-items: stretch;
+        text-align: center;
+      }}
+      .report-footer-inner > div {{
         justify-content: center;
       }}
     }}

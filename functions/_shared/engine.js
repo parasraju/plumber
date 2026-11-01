@@ -12,6 +12,7 @@ export const RULES = [
   { id: "clog/swallowed-error", cat: "Clogs & Dead Code", sev: "HIGH", title: "Swallowed Exception (Silent Failure)", fix: "Log the error or properly re-raise/handle it." },
   { id: "clog/stub-function", cat: "Clogs & Dead Code", sev: "MEDIUM", title: "Unimplemented Stub Function", fix: "Complete missing logic or remove placeholder." },
   { id: "clog/step-comments", cat: "Clogs & Dead Code", sev: "LOW", title: "Robotic AI Step Comments Left Behind", fix: "Clean up AI instructional comments." },
+  { id: "clog/dead-code", cat: "Clogs & Dead Code", sev: "HIGH", title: "Unreachable Dead Code", fix: "Delete unreachable lines or run plumber clean --write." },
   { id: "slop/pointless-wrapper", cat: "Clogs & Dead Code", sev: "LOW", title: "Function That Only Forwards Arguments", fix: "Call underlying function directly." },
   { id: "joint/icon-button", cat: "Joints & Accessibility", sev: "HIGH", title: "Icon Button Without Accessible Name", fix: "Add aria-label attribute to button element." },
   { id: "joint/clickable-div", cat: "Joints & Accessibility", sev: "HIGH", title: "Non-Semantic Clickable Element", fix: "Use native <button type='button'> instead." },
@@ -324,7 +325,84 @@ export function inspectFile(relPath, content) {
     });
   }
 
+  // 11. Clog: Unreachable dead code
+  for (const dead of findDeadCode(content, ext)) {
+    issues.push({
+      line: dead.line,
+      severity: "HIGH",
+      category: "Clogs & Dead Code",
+      rule_id: "clog/dead-code",
+      title: "Unreachable Dead Code",
+      evidence: dead.evidence.slice(0, 100),
+      fix: dead.removable ? "Delete this unreachable line." : "Remove the constant-false branch and its body."
+    });
+  }
+
   return issues;
+}
+
+function findDeadCode(content, ext) {
+  if (![".py", ".js", ".jsx", ".ts", ".tsx"].includes(ext)) return [];
+  const lines = content.split("\n");
+  const skip = new Set();
+  markMultilineStrings(lines, skip, ext === ".py" ? ['"""', "'''"] : ["`"]);
+
+  const found = [];
+  const indentOf = (line) => line.length - line.replace(/^[ \t]+/, "").length;
+  const termRe = ext === ".py" ? /^(return|raise|break|continue)\b/ : /^(return|throw|break|continue)\b/;
+  const unsafeTail = ["\\", "(", "[", "{", ",", ":", "+", "-", "*", "/", "%", "&", "|", "=", "?", ">"];
+
+  for (let idx = 0; idx < lines.length; idx++) {
+    const line = lines[idx];
+    const clean = line.trim();
+    if (skip.has(idx) || !clean || clean.startsWith("#") || clean.startsWith("//") || clean.startsWith("/*") || clean.startsWith("*")) continue;
+
+    const isPy = ext === ".py";
+    const deadBranch = isPy ? /^(?:if|while)\s+(?:False|0)\s*:/.test(clean) : /^(?:if|while)\s*\(\s*(?:false|0)\s*\)/.test(clean);
+    if (deadBranch) {
+      found.push({ line: idx + 1, reason: "Dead branch: condition is always false", evidence: clean, removable: false });
+      continue;
+    }
+
+    const terminator = termRe.exec(clean);
+    if (!terminator || unsafeTail.some((t) => clean.endsWith(t))) continue;
+
+    const target = findUnreachable(lines, idx, indentOf(line), skip, isPy);
+    if (target !== null) {
+      found.push({ line: target + 1, reason: `Unreachable statement after '${terminator[1]}'`, evidence: lines[target].trim(), removable: true });
+    }
+  }
+  return found;
+}
+
+function markMultilineStrings(lines, skip, quotes) {
+  let inside = null;
+  for (let idx = 0; idx < lines.length; idx++) {
+    if (inside !== null) skip.add(idx);
+    for (const quote of quotes) {
+      const count = lines[idx].split(quote).length - 1;
+      if (count === 0) continue;
+      if (inside === quote) {
+        if (count % 2 === 1) inside = null;
+      } else if (inside === null && count % 2 === 1) {
+        inside = quote;
+      }
+    }
+  }
+}
+
+function findUnreachable(lines, start, indent, skip, isPy) {
+  const closers = ["else:", "elif ", "except", "finally:", "case ", "default:"];
+  for (let j = start + 1; j < lines.length; j++) {
+    const raw = lines[j];
+    const clean = raw.trim();
+    if (skip.has(j) || !clean || clean.startsWith("#") || clean.startsWith("//") || clean.startsWith("/*") || clean.startsWith("*")) continue;
+    if ((raw.length - raw.replace(/^[ \t]+/, "").length) < indent) return null;
+    if (isPy ? closers.some((p) => clean.startsWith(p)) : /^(?:\}|else\b|catch\b|finally\b|case\b|default\b)/.test(clean)) return null;
+    if (/^[\)\]\}\.,:?+\-*\/%&|]/.test(clean)) continue;
+    return j;
+  }
+  return null;
 }
 
 export function runInspection(files, owner, repo) {

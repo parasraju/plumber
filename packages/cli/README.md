@@ -27,6 +27,39 @@ npx plumber-linter rules
 
 ---
 
+## Block Bad Commits
+
+Install a git pre-commit hook that blocks any commit containing API keys, hardcoded
+secrets, `.env` files, or unreachable dead code:
+
+```bash
+npx plumber-linter install-hook
+```
+
+The hook inspects only staged files (read from the git index, so partially staged
+changes are honored). Leaks and `.env` files always block; other findings block at
+`HIGH` by default. Tune the threshold or remove the hook:
+
+```bash
+npx plumber-linter install-hook --fail-on critical
+npx plumber-linter uninstall-hook
+git commit --no-verify   # bypass once
+```
+
+---
+
+## Remove Dead Code
+
+```bash
+# Preview unreachable lines (no writes)
+npx plumber-linter clean .
+
+# Delete them
+npx plumber-linter clean . --write
+```
+
+---
+
 ## Claude Code & Cursor
 
 ### Claude Code

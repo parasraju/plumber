@@ -13,7 +13,7 @@
 | Category | Tells & Anti-Patterns | Severity |
 | :--- | :--- | :--- |
 | **Leaks & Secrets** | Hardcoded OpenAI/Claude keys, AWS access IDs, committed `.env` secrets | `CRITICAL` |
-| **Clogs & Dead Code** | AI-elided comments (`// ... existing code ...`), empty stub functions, swallowed errors (`except: pass`, `catch {}`) | `HIGH` |
+| **Clogs & Dead Code** | AI-elided comments (`// ... existing code ...`), empty stub functions, swallowed errors (`except: pass`, `catch {}`), unreachable statements after `return` | `HIGH` |
 | **AI Slop Tells** | Purple/violet default gradients, heavy neon blur shadows, chatbot conversational residue | `MEDIUM` |
 | **Pipes & Dependencies**| Hallucinated package imports, undeclared dependencies, dead `href="#"` links | `HIGH` / `MEDIUM` |
 | **Joints & Accessibility** | Clickable `<div>` without roles/keys, stripped focus outlines, empty tests lacking assertions | `HIGH` / `MEDIUM` |
@@ -53,9 +53,21 @@ plumber scan . --format md
 # Enforce in CI (exits with code 1 if issues >= HIGH exist)
 plumber scan . --fail-on high
 
+# Block git commits containing secrets, .env files, or dead code
+plumber install-hook
+
+# Remove the hook again
+plumber uninstall-hook
+
+# Preview and then remove unreachable dead code
+plumber clean .
+plumber clean . --write
+
 # View registered rule catalogue
 plumber rules
 ```
+
+The pre-commit hook inspects only staged files (reading them from the git index, so partially staged changes are respected). It always blocks leaks and `.env` files, and blocks other findings at or above `--fail-on` (default `HIGH`). Bypass a single commit with `git commit --no-verify`.
 
 ### 3. Integrations (Claude Code & Cursor)
 
@@ -82,6 +94,7 @@ vercel deploy --prod
   - `scoring.py`: Density-weighted score algorithm (0.0 to 100.0) and letter grades (A through F).
   - `fetcher.py`: Memory-safe `.tar.gz` stream parser connecting directly to GitHub CDN without git binaries or API tokens.
   - `engine.py`: Multi-language traversal and AST/regex rule coordinator.
+  - `hooks.py`: Git pre-commit hook installer, staged-file inspector, and dead-code cleaner.
   - `badges.py` & `html_report.py`: High-contrast Vercel-style SVG badge and HTML dashboard generators.
 - **`plumber/rules/`**:
   - `leaks.py`, `clogs.py`, `slop.py`, `pipes.py`, `joints.py`.

@@ -9,6 +9,10 @@ from pathlib import Path
 from plumber.core.engine import PlumberEngine
 from plumber.core.fetcher import parse_repo_slug, scan_github_repo, FetchError
 from plumber.core.badges import export_markdown, export_json, export_csv
+from plumber.core.hooks import (
+    HookError, clean_dead_code, find_git_root, install_pre_commit,
+    run_hook, uninstall_pre_commit
+)
 from plumber.core.models import CRITICAL, HIGH, MEDIUM, LOW, INFO
 from plumber.rules import load_all_rules
 
@@ -38,6 +42,25 @@ def main():
     # mcp command
     subparsers.add_parser("mcp", help="Run the Model Context Protocol (MCP) server over stdio")
 
+    # install-hook command
+    install_p = subparsers.add_parser("install-hook", help="Install a git pre-commit hook that blocks leaks and dead code")
+    install_p.add_argument("--path", default=".", help="Repository path (defaults to current directory)")
+    install_p.add_argument("--fail-on", choices=["critical", "high", "medium", "low"], default="high", help="Block at this severity (default: high)")
+    install_p.add_argument("--force", action="store_true", help="Back up and replace an existing non-Plumber hook")
+
+    # uninstall-hook command
+    uninstall_p = subparsers.add_parser("uninstall-hook", help="Remove the Plumber git pre-commit hook")
+    uninstall_p.add_argument("--path", default=".", help="Repository path (defaults to current directory)")
+
+    # hook command (invoked by git)
+    hook_p = subparsers.add_parser("hook", help="Inspect staged files (used internally by the pre-commit hook)")
+    hook_p.add_argument("--fail-on", choices=["critical", "high", "medium", "low"], default="high", help="Block at this severity (default: high)")
+
+    # clean command
+    clean_p = subparsers.add_parser("clean", help="Remove unreachable dead code (dry run unless --write)")
+    clean_p.add_argument("target", nargs="?", default=".", help="File or directory to clean")
+    clean_p.add_argument("--write", action="store_true", help="Apply removals to disk")
+
     args = parser.parse_args()
 
     if not args.command or args.command == "scan":
@@ -53,6 +76,14 @@ def main():
     elif args.command == "mcp":
         from plumber.mcp import run_mcp_server
         run_mcp_server()
+    elif args.command == "install-hook":
+        install_hook_cli(args.path, args.fail_on, args.force)
+    elif args.command == "uninstall-hook":
+        uninstall_hook_cli(args.path)
+    elif args.command == "hook":
+        sys.exit(run_hook(fail_on=args.fail_on))
+    elif args.command == "clean":
+        clean_cli(args.target, args.write)
 
 
 def run_scan_cli(target: str, fmt: str, fail_on: str = None):
@@ -141,6 +172,48 @@ def render_pretty_cli(report):
                 print(f"           Fix: {issue.fix}")
 
     print("\n" + "=" * 65 + "\n")
+
+
+def install_hook_cli(path: str, fail_on: str, force: bool):
+    root = find_git_root(Path(path))
+    if root is None:
+        print(f"[Error] No git repository found at or above '{path}'.", file=sys.stderr)
+        sys.exit(1)
+    try:
+        hook_path = install_pre_commit(root, fail_on=fail_on, force=force)
+    except HookError as e:
+        print(f"[Error] {e}", file=sys.stderr)
+        sys.exit(1)
+    print(f"[Plumber] Pre-commit hook installed at {hook_path}")
+    print(f"[Plumber] Commits are blocked on secrets, .env files, and issues >= {fail_on.upper()}.")
+
+
+def uninstall_hook_cli(path: str):
+    root = find_git_root(Path(path))
+    if root is None:
+        print(f"[Error] No git repository found at or above '{path}'.", file=sys.stderr)
+        sys.exit(1)
+    try:
+        removed = uninstall_pre_commit(root)
+    except HookError as e:
+        print(f"[Error] {e}", file=sys.stderr)
+        sys.exit(1)
+    if removed:
+        print("[Plumber] Pre-commit hook removed.")
+    else:
+        print("[Plumber] No pre-commit hook installed; nothing to remove.")
+
+
+def clean_cli(target: str, write: bool):
+    target_path = Path(target)
+    if not target_path.exists():
+        print(f"[Error] Target path '{target}' does not exist.", file=sys.stderr)
+        sys.exit(1)
+    print(f"\n[Plumber] Dead code scan: {target_path.resolve()}")
+    files_changed, lines_removed = clean_dead_code(target_path, write=write)
+    if write and lines_removed:
+        print(f"[Plumber] Removed {lines_removed} unreachable line(s) in {files_changed} file(s).")
+    print()
 
 
 def list_rules_cli():

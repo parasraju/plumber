@@ -10,8 +10,39 @@ const fs = require('fs');
 const path = require('path');
 const https = require('https');
 const readline = require('readline');
+const { execFileSync } = require('child_process');
 
 const API_BASE = process.env.PLUMBER_API_URL || 'http://localhost:3100';
+const HOOK_MARKER = '# plumber-managed-hook';
+const HOOK_BACKUP_SUFFIX = '.pre-plumber';
+const ENV_TEMPLATE_RE = /\.(example|sample|template|dist)$/;
+const SCANNABLE_EXTS = new Set(['.py', '.js', '.jsx', '.ts', '.tsx', '.html', '.htm', '.css', '.scss', '.less', '.vue', '.svelte', '.astro', '.go', '.rs', '.java', '.env']);
+
+const PRE_COMMIT_SCRIPT = `#!/bin/sh
+${HOOK_MARKER}
+# Installed by Plumber. Remove with: plumber uninstall-hook
+# Bypass once with: git commit --no-verify
+if command -v plumber >/dev/null 2>&1; then
+  exec plumber hook {flags}
+fi
+if [ -x "./node_modules/.bin/plumber" ]; then
+  exec ./node_modules/.bin/plumber hook {flags}
+fi
+if command -v plumber-linter >/dev/null 2>&1; then
+  exec plumber-linter hook {flags}
+fi
+if command -v npx >/dev/null 2>&1; then
+  exec npx --no-install plumber-linter hook {flags}
+fi
+if command -v python3 >/dev/null 2>&1; then
+  exec python3 -m plumber hook {flags}
+fi
+if command -v python >/dev/null 2>&1; then
+  exec python -m plumber hook {flags}
+fi
+echo "[Plumber] Could not locate plumber. Install it with: npm i -g plumber-linter" >&2
+exit 1
+`;
 
 const RULES = [
   { id: 'leak/api-key', cat: 'Leaks & Secrets', sev: 'CRITICAL', title: 'Leaked API Key or Private Access Token', fix: 'Move secret to environment variable (.env).' },
@@ -22,6 +53,7 @@ const RULES = [
   { id: 'clog/swallowed-error', cat: 'Clogs & Dead Code', sev: 'HIGH', title: 'Swallowed Exception (Silent Failure)', fix: 'Log the error or properly re-raise/handle it.' },
   { id: 'clog/stub-function', cat: 'Clogs & Dead Code', sev: 'MEDIUM', title: 'Unimplemented Stub Function', fix: 'Complete missing logic or remove placeholder.' },
   { id: 'clog/step-comments', cat: 'Clogs & Dead Code', sev: 'LOW', title: 'Robotic AI Step Comments Left Behind', fix: 'Clean up AI instructional comments.' },
+  { id: 'clog/dead-code', cat: 'Clogs & Dead Code', sev: 'HIGH', title: 'Unreachable Dead Code', fix: 'Delete unreachable lines or run plumber clean --write.' },
   { id: 'slop/pointless-wrapper', cat: 'Clogs & Dead Code', sev: 'LOW', title: 'Function That Only Forwards Its Arguments', fix: 'Call underlying function directly.' },
   { id: 'joint/icon-button', cat: 'Joints & Accessibility', sev: 'HIGH', title: 'Icon Button Without Accessible Name', fix: 'Add aria-label attribute to button element.' },
   { id: 'joint/clickable-div', cat: 'Joints & Accessibility', sev: 'HIGH', title: 'Non-Semantic Clickable Element (Missing Button / Role)', fix: 'Use native <button type="button">.' },
@@ -53,6 +85,14 @@ if (cmd === 'mcp') {
   const failIdx = args.indexOf('--fail-on');
   const failOn = failIdx !== -1 && args[failIdx + 1] ? args[failIdx + 1].toUpperCase() : null;
   runScan(target, fmt, failOn);
+} else if (cmd === 'install-hook') {
+  installHook(args.slice(1));
+} else if (cmd === 'uninstall-hook') {
+  uninstallHook(args.slice(1));
+} else if (cmd === 'hook') {
+  runHook(args.slice(1));
+} else if (cmd === 'clean') {
+  runClean(args.slice(1));
 } else {
   printHelp();
 }
@@ -63,12 +103,18 @@ Plumber — Code Leak, Clog, and AI Slop Inspector (v1.0.0)
 
 USAGE:
   npx plumber-linter scan [target] [options]
+  npx plumber-linter install-hook [--fail-on high] [--force]
+  npx plumber-linter uninstall-hook
+  npx plumber-linter clean [target] [--write]
   npx plumber-linter rules
   npx plumber-linter mcp
 
 COMMANDS:
   scan [path|owner/repo]  Scan local codebase or GitHub repository
-  rules                   Display catalogue of 20 inspection rules
+  install-hook            Block git commits that contain secrets, .env files, or dead code
+  uninstall-hook          Remove the Plumber pre-commit hook
+  clean [path]            Remove unreachable dead code (dry run unless --write)
+  rules                   Display catalogue of 21 inspection rules
   mcp                     Run stdio Model Context Protocol (MCP) server for Claude / Cursor
 
 OPTIONS:
@@ -172,6 +218,12 @@ function scanLocalDirectory(dirPath) {
 function inspectFile(relPath, content, lines, ext) {
   const issues = [];
   const lower = content.toLowerCase();
+  const base = path.basename(relPath);
+
+  // Environment files must never be committed
+  if (base.startsWith('.env') && !ENV_TEMPLATE_RE.test(base)) {
+    issues.push({ rule_id: 'leak/committed-env', title: 'Environment File Staged for Commit', severity: 'CRITICAL', line: 1, evidence: base, fix: 'Remove from git, add to .gitignore, and commit .env.example instead.' });
+  }
 
   // Elided code
   if (/(?:\/\/|#|\/\*)\s*(?:\.\.\.|…)?\s*(?:existing\s+code|rest\s+of\s+code)/i.test(content)) {
@@ -221,7 +273,83 @@ function inspectFile(relPath, content, lines, ext) {
     });
   }
 
+  // Unreachable dead code
+  for (const dead of findDeadCode(content, ext)) {
+    issues.push({
+      rule_id: 'clog/dead-code',
+      title: 'Unreachable Dead Code',
+      severity: 'HIGH',
+      line: dead.line,
+      evidence: dead.evidence.slice(0, 100),
+      fix: dead.removable ? "Delete this unreachable line or run 'plumber clean <path> --write'." : 'Remove the constant-false branch and its body.'
+    });
+  }
+
   return issues;
+}
+
+function findDeadCode(content, ext) {
+  if (!['.py', '.js', '.jsx', '.ts', '.tsx'].includes(ext)) return [];
+  const lines = content.split('\n');
+  const skip = new Set();
+  markMultilineStrings(lines, skip, ext === '.py' ? ['"""', "'''"] : ['`']);
+
+  const found = [];
+  const indentOf = (line) => line.length - line.replace(/^[ \t]+/, '').length;
+  const termRe = ext === '.py' ? /^(return|raise|break|continue)\b/ : /^(return|throw|break|continue)\b/;
+  const unsafeTail = ['\\', '(', '[', '{', ',', ':', '+', '-', '*', '/', '%', '&', '|', '=', '?', '>'];
+
+  for (let idx = 0; idx < lines.length; idx++) {
+    const line = lines[idx];
+    const clean = line.trim();
+    if (skip.has(idx) || !clean || clean.startsWith('#') || clean.startsWith('//') || clean.startsWith('/*') || clean.startsWith('*')) continue;
+
+    const isPy = ext === '.py';
+    const deadBranch = isPy ? /^(?:if|while)\s+(?:False|0)\s*:/.test(clean) : /^(?:if|while)\s*\(\s*(?:false|0)\s*\)/.test(clean);
+    if (deadBranch) {
+      found.push({ line: idx + 1, reason: 'Dead branch: condition is always false', evidence: clean, removable: false });
+      continue;
+    }
+
+    const terminator = termRe.exec(clean);
+    if (!terminator || unsafeTail.some((t) => clean.endsWith(t))) continue;
+
+    const target = findUnreachable(lines, idx, indentOf(line), skip, isPy);
+    if (target !== null) {
+      found.push({ line: target + 1, reason: `Unreachable statement after '${terminator[1]}'`, evidence: lines[target].trim(), removable: true });
+    }
+  }
+  return found;
+}
+
+function markMultilineStrings(lines, skip, quotes) {
+  let inside = null;
+  for (let idx = 0; idx < lines.length; idx++) {
+    if (inside !== null) skip.add(idx);
+    for (const quote of quotes) {
+      const count = lines[idx].split(quote).length - 1;
+      if (count === 0) continue;
+      if (inside === quote) {
+        if (count % 2 === 1) inside = null;
+      } else if (inside === null && count % 2 === 1) {
+        inside = quote;
+      }
+    }
+  }
+}
+
+function findUnreachable(lines, start, indent, skip, isPy) {
+  const closers = ['else:', 'elif ', 'except', 'finally:', 'case ', 'default:'];
+  for (let j = start + 1; j < lines.length; j++) {
+    const raw = lines[j];
+    const clean = raw.trim();
+    if (skip.has(j) || !clean || clean.startsWith('#') || clean.startsWith('//') || clean.startsWith('/*') || clean.startsWith('*')) continue;
+    if ((raw.length - raw.replace(/^[ \t]+/, '').length) < indent) return null;
+    if (isPy ? closers.some((p) => clean.startsWith(p)) : /^(?:\}|else\b|catch\b|finally\b|case\b|default\b)/.test(clean)) return null;
+    if (/^[\)\]\}\.,:?+\-*\/%&|]/.test(clean)) continue;
+    return j;
+  }
+  return null;
 }
 
 function renderReport(report, fmt, failOn) {
@@ -281,6 +409,219 @@ function fetchReport(slug) {
       });
     }).on('error', reject);
   });
+}
+
+function git(cwd, gitArgs) {
+  return execFileSync('git', gitArgs, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+}
+
+function findGitRoot(start) {
+  try {
+    return git(start, ['rev-parse', '--show-toplevel']).trim();
+  } catch (_) {
+    return null;
+  }
+}
+
+function preCommitPath(root) {
+  try {
+    const rel = git(root, ['rev-parse', '--git-path', 'hooks/pre-commit']).trim();
+    return path.isAbsolute(rel) ? rel : path.resolve(root, rel);
+  } catch (_) {
+    return path.join(root, '.git', 'hooks', 'pre-commit');
+  }
+}
+
+function flagValue(argv, name) {
+  const i = argv.indexOf(name);
+  if (i === -1) return null;
+  const value = argv[i + 1];
+  return value && !value.startsWith('--') ? value : null;
+}
+
+function installHook(argv) {
+  const repoPath = path.resolve(flagValue(argv, '--path') || '.');
+  const failOn = (flagValue(argv, '--fail-on') || 'high').toLowerCase();
+  const force = argv.includes('--force');
+
+  if (!['critical', 'high', 'medium', 'low'].includes(failOn)) {
+    console.error(`[Error] Invalid severity '${failOn}'. Use critical, high, medium, or low.`);
+    process.exit(1);
+  }
+
+  const root = findGitRoot(repoPath);
+  if (!root) {
+    console.error(`[Error] No git repository found at or above '${repoPath}'.`);
+    process.exit(1);
+  }
+
+  const hookPath = preCommitPath(root);
+  fs.mkdirSync(path.dirname(hookPath), { recursive: true });
+
+  if (fs.existsSync(hookPath)) {
+    const existing = fs.readFileSync(hookPath, 'utf8');
+    if (!existing.includes(HOOK_MARKER)) {
+      if (!force) {
+        console.error(`[Error] ${hookPath} already exists and is not managed by Plumber.`);
+        console.error(`[Error] Re-run with --force to back it up to ${path.basename(hookPath)}${HOOK_BACKUP_SUFFIX}.`);
+        process.exit(1);
+      }
+      fs.writeFileSync(hookPath + HOOK_BACKUP_SUFFIX, existing, 'utf8');
+    }
+  }
+
+  fs.writeFileSync(hookPath, PRE_COMMIT_SCRIPT.replace('{flags}', `--fail-on ${failOn}`), 'utf8');
+  try { fs.chmodSync(hookPath, 0o755); } catch (_) { /* Windows ignores POSIX modes */ }
+
+  console.log(`[Plumber] Pre-commit hook installed at ${hookPath}`);
+  console.log(`[Plumber] Commits are blocked on secrets, .env files, and issues >= ${failOn.toUpperCase()}.`);
+}
+
+function uninstallHook(argv) {
+  const repoPath = path.resolve(flagValue(argv, '--path') || '.');
+  const root = findGitRoot(repoPath);
+  if (!root) {
+    console.error(`[Error] No git repository found at or above '${repoPath}'.`);
+    process.exit(1);
+  }
+
+  const hookPath = preCommitPath(root);
+  if (!fs.existsSync(hookPath)) {
+    console.log('[Plumber] No pre-commit hook installed; nothing to remove.');
+    return;
+  }
+
+  const content = fs.readFileSync(hookPath, 'utf8');
+  if (!content.includes(HOOK_MARKER)) {
+    console.error(`[Error] ${hookPath} is not managed by Plumber; refusing to delete it.`);
+    process.exit(1);
+  }
+
+  fs.unlinkSync(hookPath);
+  const backup = hookPath + HOOK_BACKUP_SUFFIX;
+  if (fs.existsSync(backup)) fs.renameSync(backup, hookPath);
+  console.log('[Plumber] Pre-commit hook removed.');
+}
+
+function runHook(argv) {
+  const failOn = (flagValue(argv, '--fail-on') || 'high').toUpperCase();
+  const root = findGitRoot(process.cwd());
+  if (!root) {
+    console.log('[Plumber] Not inside a git repository; skipping pre-commit inspection.');
+    return;
+  }
+
+  let staged;
+  try {
+    staged = git(root, ['diff', '--cached', '--name-only', '--diff-filter=ACMR', '-z']).split('\0').filter(Boolean);
+  } catch (e) {
+    console.error(`[Plumber] Could not read staged files: ${e.message}`);
+    process.exit(1);
+  }
+
+  const issues = [];
+  let totalFiles = 0;
+  let totalLines = 0;
+
+  for (const rel of staged) {
+    const base = path.basename(rel);
+    const ext = path.extname(rel).toLowerCase();
+    const isEnv = base.startsWith('.env');
+    if (!isEnv && !SCANNABLE_EXTS.has(ext)) continue;
+
+    let content;
+    try {
+      content = git(root, ['show', `:${rel}`]);
+    } catch (_) {
+      continue;
+    }
+
+    totalFiles++;
+    const lines = content.split('\n');
+    totalLines += lines.length;
+    issues.push(...inspectFile(rel, content, lines, ext));
+  }
+
+  const threshold = SEV_WEIGHT[failOn] || 3;
+  const blocking = issues.filter((i) =>
+    i.rule_id.startsWith('leak/') || i.rule_id.startsWith('sec/') || (SEV_WEIGHT[i.severity] || 0) >= threshold
+  );
+
+  console.log(`[Plumber] Inspected ${totalFiles} staged file(s), ${totalLines} lines. Found ${issues.length} issue(s).`);
+
+  if (blocking.length === 0) {
+    console.log('[Plumber] No blocking leaks, secrets, or dead code. Commit allowed.');
+    return;
+  }
+
+  console.log(`[Plumber] ${blocking.length} blocking issue(s):`);
+  for (const i of blocking) {
+    console.log(`  ${i.severity} ${i.title} (line ${i.line})`);
+    if (i.evidence) console.log(`      Found: ${i.evidence}`);
+    if (i.fix) console.log(`      Fix:   ${i.fix}`);
+  }
+  console.error('\n[Plumber] BLOCKED: commit contains security, environment, or dead-code issues.');
+  console.error('[Plumber] Fix the findings above, or bypass once with: git commit --no-verify');
+  process.exit(1);
+}
+
+function collectSourceFiles(target) {
+  const results = [];
+  const skipDirs = new Set(['.git', 'node_modules', 'dist', 'build', '.next', '.nuxt', 'vendor', '.venv', 'venv', '__pycache__']);
+
+  function walk(current) {
+    let stat;
+    try { stat = fs.statSync(current); } catch (_) { return; }
+    if (stat.isFile()) { results.push(current); return; }
+    if (!stat.isDirectory()) return;
+    const base = path.basename(current);
+    if (skipDirs.has(base) || (base.startsWith('.') && current !== target)) return;
+    for (const entry of fs.readdirSync(current)) walk(path.join(current, entry));
+  }
+
+  walk(target);
+  return results;
+}
+
+function runClean(argv) {
+  const write = argv.includes('--write');
+  const target = path.resolve(argv.find((a) => !a.startsWith('--')) || '.');
+  if (!fs.existsSync(target)) {
+    console.error(`[Error] Target path '${target}' does not exist.`);
+    process.exit(1);
+  }
+
+  let changed = 0;
+  let removed = 0;
+
+  for (const file of collectSourceFiles(target)) {
+    const ext = path.extname(file).toLowerCase();
+    if (!['.py', '.js', '.jsx', '.ts', '.tsx'].includes(ext)) continue;
+
+    let content;
+    try { content = fs.readFileSync(file, 'utf8'); } catch (_) { continue; }
+
+    const dead = findDeadCode(content, ext).filter((d) => d.removable);
+    if (dead.length === 0) continue;
+
+    const doomed = new Set(dead.map((d) => d.line));
+    const newContent = content.split('\n').filter((_, i) => !doomed.has(i + 1)).join('\n');
+
+    console.log(`  ${path.relative(process.cwd(), file)}: ${dead.length} unreachable line(s)`);
+    for (const d of dead) console.log(`    L${d.line}: ${d.evidence.slice(0, 90)}`);
+
+    changed++;
+    removed += dead.length;
+    if (write) fs.writeFileSync(file, newContent, 'utf8');
+  }
+
+  if (changed === 0) {
+    console.log('  No removable dead code found.');
+  } else if (!write) {
+    console.log(`\nDry run only. ${removed} line(s) in ${changed} file(s). Re-run with --write to delete them.`);
+  } else {
+    console.log(`\nRemoved ${removed} line(s) across ${changed} file(s).`);
+  }
 }
 
 function runMcpServer() {

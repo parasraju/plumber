@@ -2,6 +2,7 @@
 Rules for detecting clogs: elided code, stubs, swallowed errors, and AI step comments.
 """
 import re
+from dataclasses import dataclass
 from typing import List
 from plumber.core.models import Issue, HIGH, MEDIUM, LOW, CAT_CLOGS
 from plumber.rules import register_rule, FileContext
@@ -213,3 +214,157 @@ def check_pointless_wrapper(ctx: FileContext) -> List[Issue]:
                 description="Layers of trivial forwarders are a hallmark of over-abstracted AI code."
             ))
     return issues
+
+PY_TERMINATOR_RE = re.compile(r'^(return|raise|break|continue)\b')
+JS_TERMINATOR_RE = re.compile(r'^(return|throw|break|continue)\b')
+PY_BLOCK_CLOSERS = ("else:", "elif ", "except", "finally:", "case ", "default:")
+JS_BLOCK_CLOSERS = re.compile(r'^(?:\}|\belse\b|\bcatch\b|\bfinally\b|\bcase\b|\bdefault\b)')
+CONTINUATION_RE = re.compile(r'^[\)\]\}\.,:?+\-*/%&|]')
+UNSAFE_TAIL = ("\\", "(", "[", "{", ",", ":", "+", "-", "*", "/", "%", "&", "|", "=", "?", ">")
+DEAD_BRANCH_PY = re.compile(r'^(?:if|while)\s+(?:False|0)\s*:')
+DEAD_BRANCH_JS = re.compile(r'^(?:if|while)\s*\(\s*(?:false|0)\s*\)')
+
+
+@dataclass
+class DeadCode:
+    line: int
+    reason: str
+    evidence: str
+    removable: bool = True
+
+
+def _indent(line: str) -> int:
+    return len(line) - len(line.lstrip(" \t"))
+
+
+def _multiline_string_lines(lines: List[str], quotes: tuple) -> set:
+    """Line indexes that sit inside a multi-line string/template literal."""
+    inside = None
+    marks = set()
+    for idx, line in enumerate(lines):
+        if inside is not None:
+            marks.add(idx)
+        for quote in quotes:
+            count = line.count(quote)
+            if count == 0:
+                continue
+            if inside == quote:
+                if count % 2 == 1:
+                    inside = None
+            elif inside is None and count % 2 == 1:
+                inside = quote
+    return marks
+
+
+def _find_unreachable_py(lines: List[str], start: int, indent: int, skip: set):
+    j = start + 1
+    while j < len(lines):
+        raw = lines[j]
+        clean = raw.strip()
+        if j in skip or not clean or clean.startswith("#"):
+            j += 1
+            continue
+        if _indent(raw) < indent:
+            return None
+        if any(clean.startswith(prefix) for prefix in PY_BLOCK_CLOSERS):
+            return None
+        if CONTINUATION_RE.match(clean):
+            j += 1
+            continue
+        return j
+    return None
+
+
+def _find_unreachable_js(lines: List[str], start: int, indent: int, skip: set):
+    j = start + 1
+    while j < len(lines):
+        raw = lines[j]
+        clean = raw.strip()
+        if j in skip or not clean or clean.startswith(("//", "/*", "*", "*/")):
+            j += 1
+            continue
+        if _indent(raw) < indent:
+            return None
+        if JS_BLOCK_CLOSERS.match(clean):
+            return None
+        if CONTINUATION_RE.match(clean):
+            j += 1
+            continue
+        return j
+    return None
+
+
+def find_dead_code(content: str, ext: str) -> List[DeadCode]:
+    """Locate unreachable statements and constant-false branches in Python/JS/TS source."""
+    ext = ext.lower()
+    if ext not in (".py", ".js", ".jsx", ".ts", ".tsx"):
+        return []
+
+    lines = content.splitlines()
+    found: List[DeadCode] = []
+    if ext == ".py":
+        skip = _multiline_string_lines(lines, ('"""', "'''"))
+    else:
+        skip = _multiline_string_lines(lines, ("`",))
+
+    for idx, line in enumerate(lines):
+        clean = line.strip()
+        if idx in skip or not clean or clean.startswith(("#", "//", "/*", "*", "*/")):
+            continue
+
+        if ext == ".py":
+            if DEAD_BRANCH_PY.match(clean):
+                found.append(DeadCode(idx + 1, "Dead branch: condition is always false", clean, removable=False))
+                continue
+            terminator = PY_TERMINATOR_RE.match(clean)
+            if not terminator or clean.endswith(UNSAFE_TAIL):
+                continue
+            target = _find_unreachable_py(lines, idx, _indent(line), skip)
+        else:
+            if DEAD_BRANCH_JS.match(clean):
+                found.append(DeadCode(idx + 1, "Dead branch: condition is always false", clean, removable=False))
+                continue
+            terminator = JS_TERMINATOR_RE.match(clean)
+            if not terminator or clean.endswith(UNSAFE_TAIL):
+                continue
+            target = _find_unreachable_js(lines, idx, _indent(line), skip)
+
+        if target is not None:
+            found.append(DeadCode(
+                target + 1,
+                f"Unreachable statement after '{terminator.group(1)}'",
+                lines[target].strip()
+            ))
+
+    return found
+
+
+@register_rule(
+    "clog/dead-code",
+    "Unreachable Dead Code",
+    HIGH,
+    CAT_CLOGS,
+    "A statement can never execute because it follows an unconditional return, raise, throw, break, or continue.",
+    "Delete the unreachable lines or restore the intended control flow. Run 'plumber clean' to preview removal."
+)
+def check_dead_code(ctx: FileContext) -> List[Issue]:
+    if not ctx.is_script or ctx.ext not in (".py", ".js", ".jsx", ".ts", ".tsx"):
+        return []
+    if not any(k in ctx.content for k in ("return", "raise", "throw", "break", "continue", "False", "false")):
+        return []
+
+    return [
+        Issue(
+            rule_id="clog/dead-code",
+            title="Unreachable Dead Code",
+            severity=HIGH,
+            category=CAT_CLOGS,
+            file_path=ctx.path,
+            line=dead.line,
+            evidence=dead.evidence[:100],
+            fix=("Delete this unreachable line, or run 'plumber clean <path> --write' to remove it." if dead.removable
+                 else "Remove the constant-false branch and its body, or restore the intended condition."),
+            description=f"{dead.reason}. Dead branches hide logic bugs and inflate maintenance cost."
+        )
+        for dead in find_dead_code(ctx.content, ctx.ext)
+    ]

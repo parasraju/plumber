@@ -15,8 +15,15 @@ plumber scan . --fail-on high
 plumber scan . --format json
 plumber scan . --format md
 
-# List all 20 registered inspection rules
+# List all 21 registered inspection rules
 plumber rules
+
+# Install a git pre-commit hook that blocks secrets, .env files, and dead code
+plumber install-hook
+
+# Remove unreachable dead code (preview, then apply)
+plumber clean .
+plumber clean . --write
 
 # Run Model Context Protocol (MCP) server
 plumber mcp

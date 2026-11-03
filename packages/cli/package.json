@@ -1,6 +1,6 @@
 {
   "name": "plumber-linter",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "description": "CI/CD pipeline linter that flags hardcoded secrets, leaked credentials, and dead code — with fixes in plain English.",
   "main": "bin/plumber.js",
   "bin": {

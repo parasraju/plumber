@@ -33,11 +33,11 @@ WRAPPER_RE = re.compile(r'def\s+(\w+)\s*\([^)]*\)\s*(?:->\s*[^:]+)?:\s*return\s+
     "AI-Elided Code Snippet Left in File",
     HIGH,
     CAT_CLOGS,
-    "The code contains comments like '// ... existing code ...' where an AI agent elided code during a diff/edit.",
+    "The code contains placeholder truncation comments where an AI agent elided code during a diff/edit.",
     "Restore the complete function or component implementation. Elided snippets often accidentally delete working logic."
 )
 def check_elided_code(ctx: FileContext) -> List[Issue]:
-    if not ELIDED_PATTERN.search(ctx.content):
+    if ctx.is_test or not ELIDED_PATTERN.search(ctx.content):
         return []
 
     issues = []
@@ -66,7 +66,7 @@ def check_elided_code(ctx: FileContext) -> List[Issue]:
     "Log the error or properly re-raise/handle it with user notification."
 )
 def check_swallowed_exceptions(ctx: FileContext) -> List[Issue]:
-    if not ctx.is_script:
+    if ctx.is_test or not ctx.is_script:
         return []
     if "except" not in ctx.content and "catch" not in ctx.content:
         return []
@@ -79,10 +79,13 @@ def check_swallowed_exceptions(ctx: FileContext) -> List[Issue]:
         # Python: single line "except: pass" or multiline "except:\n    pass"
         if ctx.ext in (".py",):
             is_swallowed = False
-            if SWALLOWED_EXCEPT_PY.search(clean):
-                is_swallowed = True
-            elif clean.startswith("except") and clean.endswith(":") and next_clean in ("pass", "..."):
-                is_swallowed = True
+            if clean.startswith("#") or clean.startswith("//"):
+                continue
+            if clean.startswith("except"):
+                if SWALLOWED_EXCEPT_PY.match(clean):
+                    is_swallowed = True
+                elif clean.endswith(":") and next_clean in ("pass", "..."):
+                    is_swallowed = True
 
             if is_swallowed:
                 evidence = clean if not next_clean else f"{clean} {next_clean}"

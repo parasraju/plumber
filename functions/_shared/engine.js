@@ -95,7 +95,9 @@ export function parseTar(buffer) {
         try {
           const content = dec.decode(contentBuf);
           files.push({ path: relPath, content, size });
-        } catch (_) {}
+        } catch (err) {
+          console.warn("[Plumber] Failed to decode " + relPath + ":", err);
+        }
       }
     }
     offset += Math.ceil(size / 512) * 512;

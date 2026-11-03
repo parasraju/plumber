@@ -219,6 +219,7 @@ function inspectFile(relPath, content, lines, ext) {
   const issues = [];
   const lower = content.toLowerCase();
   const base = path.basename(relPath);
+  const isTest = relPath.toLowerCase().includes('test') || relPath.toLowerCase().includes('spec');
 
   // Environment files must never be committed
   if (base.startsWith('.env') && !ENV_TEMPLATE_RE.test(base)) {
@@ -226,7 +227,7 @@ function inspectFile(relPath, content, lines, ext) {
   }
 
   // Elided code
-  if (/(?:\/\/|#|\/\*)\s*(?:\.\.\.|…)?\s*(?:existing\s+code|rest\s+of\s+code)/i.test(content)) {
+  if (!isTest && /(?:\/\/|#|\/\*)\s*(?:\.\.\.|…)?\s*(?:existing\s+code|rest\s+of\s+code)/i.test(content)) {
     lines.forEach((l, idx) => {
       if (/(?:\/\/|#|\/\*)\s*(?:\.\.\.|…)?\s*(?:existing\s+code|rest\s+of\s+code)/i.test(l)) {
         issues.push({ rule_id: 'clog/elided-code', title: 'AI-Elided Code Snippet Left in File', severity: 'HIGH', line: idx + 1, evidence: l.trim().slice(0, 90), fix: 'Restore the complete code implementation.' });
@@ -235,22 +236,28 @@ function inspectFile(relPath, content, lines, ext) {
   }
 
   // Swallowed error
-  if (lower.includes('except') || lower.includes('catch')) {
+  if (!isTest && (ext === '.py' || ext === '.js' || ext === '.ts' || ext === '.jsx' || ext === '.tsx')) {
     lines.forEach((l, idx) => {
-      if (/except(?:\s+\w+)?:\s*(?:pass|\.\.\.)/.test(l) || /catch\s*\([^)]*\)\s*\{\s*\}/.test(l)) {
-        issues.push({ rule_id: 'clog/swallowed-error', title: 'Swallowed Exception (Silent Failure)', severity: 'HIGH', line: idx + 1, evidence: l.trim(), fix: 'Log the error or properly re-raise/handle it.' });
+      const trim = l.trim();
+      if (trim.startsWith('#') || trim.startsWith('//') || trim.startsWith('/*')) return;
+      if (ext === '.py' && /^\s*except(?:\s+\w+)?:\s*(?:pass|\.\.\.)/.test(l)) {
+        issues.push({ rule_id: 'clog/swallowed-error', title: 'Swallowed Exception (Silent Failure)', severity: 'HIGH', line: idx + 1, evidence: trim, fix: 'Log the error or properly re-raise/handle it.' });
+      } else if (ext !== '.py' && /catch\s*\([^)]*\)\s*\{\s*\}/.test(l)) {
+        issues.push({ rule_id: 'clog/swallowed-error', title: 'Swallowed Exception (Silent Failure)', severity: 'HIGH', line: idx + 1, evidence: trim, fix: 'Log the error or properly re-raise/handle it.' });
       }
     });
   }
 
   // API keys
-  if (content.includes('sk-') || content.includes('ghp_') || content.includes('AKIA')) {
+  if (!isTest && (content.includes('sk-') || content.includes('ghp_') || content.includes('AKIA'))) {
     lines.forEach((l, idx) => {
+      const trim = l.trim();
+      if (trim.startsWith('#') || trim.startsWith('//')) return;
       if (/\b(sk-(?:live|test|proj)?[a-zA-Z0-9_-]{24,})\b/.test(l)) {
-        issues.push({ rule_id: 'leak/api-key', title: 'Leaked OpenAI / Model API Key', severity: 'CRITICAL', line: idx + 1, evidence: l.trim().slice(0, 70), fix: 'Extract secret to .env file immediately.' });
+        issues.push({ rule_id: 'leak/api-key', title: 'Leaked OpenAI / Model API Key', severity: 'CRITICAL', line: idx + 1, evidence: trim.slice(0, 70), fix: 'Extract secret to .env file immediately.' });
       }
       if (/\b(ghp_[a-zA-Z0-9]{36})\b/.test(l)) {
-        issues.push({ rule_id: 'leak/api-key', title: 'Leaked GitHub Personal Access Token', severity: 'CRITICAL', line: idx + 1, evidence: l.trim().slice(0, 70), fix: 'Revoke key and store in secrets manager.' });
+        issues.push({ rule_id: 'leak/api-key', title: 'Leaked GitHub Personal Access Token', severity: 'CRITICAL', line: idx + 1, evidence: trim.slice(0, 70), fix: 'Revoke key and store in secrets manager.' });
       }
     });
   }

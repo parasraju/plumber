@@ -1,7 +1,7 @@
 {
   "name": "plumber-linter",
-  "version": "1.1.0",
-  "description": "Deterministic Code Leak, Clog, and AI Slop Inspector for the AI-agent era",
+  "version": "1.1.1",
+  "description": "CI/CD pipeline linter that flags hardcoded secrets, leaked credentials, and dead code — with fixes in plain English.",
   "main": "bin/plumber.js",
   "bin": {
     "plumber": "bin/plumber.js",
@@ -9,16 +9,28 @@
   },
   "keywords": [
     "linter",
-    "ai-slop",
-    "mcp",
-    "mcp-server",
-    "code-quality",
+    "github-actions",
+    "gitlab",
+    "ci-cd",
+    "pipeline-security",
     "secrets-detection",
-    "claude-code",
-    "cursor"
+    "code-quality",
+    "devsecops",
+    "security",
+    "github",
+    "workflow",
+    "cli"
   ],
   "author": "Paras Raju",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/parasraju/plumber.git"
+  },
+  "bugs": {
+    "url": "https://github.com/parasraju/plumber/issues"
+  },
+  "homepage": "https://github.com/parasraju/plumber#readme",
   "engines": {
     "node": ">=18.0.0"
   },

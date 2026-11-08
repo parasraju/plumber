@@ -1,9 +1,8 @@
 {
-  "$schema": "https://modelcontextprotocol.io/schema/config.json",
   "mcpServers": {
     "plumber": {
-      "command": "plumber",
-      "args": ["mcp"],
+      "command": "npx",
+      "args": ["-y", "@parasraju/plumber-mcp"],
       "description": "Deterministic code leak, clog, and AI slop inspector"
     }
   }

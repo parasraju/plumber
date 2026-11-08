@@ -1,0 +1,45 @@
+{
+  "name": "@parasraju/plumber-mcp",
+  "version": "1.0.1",
+  "description": "Plumber as an MCP server — let your AI coding agent scan repos for leaked secrets, dead code, and AI slop, with fixes in plain English.",
+  "main": "src/engine.js",
+  "bin": {
+    "plumber-mcp": "bin/plumber-mcp.js"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "files": [
+    "bin",
+    "src",
+    "README.md"
+  ],
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "claude-code",
+    "cursor",
+    "opencode",
+    "ai-agents",
+    "security",
+    "secrets-detection",
+    "code-quality",
+    "linter"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/parasraju/plumber.git"
+  },
+  "homepage": "https://github.com/parasraju/plumber#readme",
+  "bugs": {
+    "url": "https://github.com/parasraju/plumber/issues"
+  },
+  "license": "MIT",
+  "author": "Paras Raju",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.2"
+  }
+}

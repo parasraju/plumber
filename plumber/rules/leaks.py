@@ -46,7 +46,7 @@ def check_api_keys(ctx: FileContext) -> List[Issue]:
     issues = []
     for line_num, line in enumerate(ctx.lines, 1):
         lower = line.lower()
-        if any(w in lower for w in ("your_", "insert_", "<key>", "example", "dummy", "placeholder", "fake", "redact", "mask", "assert", "monkeypatch", "pattern", "regex")):
+        if any(w in lower for w in ("your_", "insert_", "<key>", "example", "dummy", "placeholder", "fake", "redact", "mask", "assert", "monkeypatch", "pattern", "regex", "@openssh", "sk-ssh-", "sk-ecdsa-")):
             continue
 
         for pattern, label in API_KEY_PATTERNS:

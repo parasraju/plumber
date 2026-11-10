@@ -12,7 +12,7 @@ ELIDED_PATTERN = re.compile(
     re.IGNORECASE
 )
 
-SWALLOWED_EXCEPT_PY = re.compile(r'except(?:\s+\w+)?:\s*(?:pass|\.\.\.)')
+SWALLOWED_EXCEPT_PY = re.compile(r'except(?:\s+(?:\(\s*)?(?:Exception|BaseException)(?:\s*\))?)?\s*:\s*(?:pass|\.\.\.)')
 SWALLOWED_CATCH_JS = re.compile(r'catch\s*\([^)]*\)\s*\{\s*\}')
 
 STEP_COMMENT_PATTERN = re.compile(

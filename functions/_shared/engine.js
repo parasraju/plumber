@@ -24,7 +24,12 @@ export const RULES = [
   { id: "slop/chatbot-residue", cat: "AI Slop Tells", sev: "MEDIUM", title: "Pasted Chatbot Conversational Residue", fix: "Delete conversational intro/outro boilerplate." },
   { id: "slop/neon-glow", cat: "AI Slop Tells", sev: "LOW", title: "Colored Neon Glow Shadow", fix: "Replace with subtle crisp 1px borders." },
   { id: "slop/gradient-text", cat: "AI Slop Tells", sev: "LOW", title: "Gradient-Clipped Headline Text", fix: "Use solid, high-contrast typography." },
-  { id: "ui/important-abuse", cat: "AI Slop Tells", sev: "LOW", title: "!important Overrides in Stylesheet", fix: "Structure CSS cascade cleanly without !important." }
+  { id: "ui/important-abuse", cat: "AI Slop Tells", sev: "LOW", title: "!important Overrides in Stylesheet", fix: "Structure CSS cascade cleanly without !important." },
+  { id: "pipe/docker-unpinned", cat: "Pipes & Dependencies", sev: "MEDIUM", title: "Unpinned Docker Image (Missing Tag or :latest)", fix: "Pin image to an explicit version tag or SHA256 digest (e.g., node:20.11-alpine)." },
+  { id: "sec/curl-pipe-shell", cat: "Leaks & Secrets", sev: "CRITICAL", title: "Remote Script Piped Directly to Shell (curl | bash)", fix: "Download script first, verify its SHA256 checksum or signature, then execute it." },
+  { id: "sec/permissions-write-all", cat: "Leaks & Secrets", sev: "HIGH", title: "Overly Broad Workflow Write Permissions", fix: "Use least-privilege permissions (e.g., permissions: { contents: read })." },
+  { id: "leak/slack-webhook", cat: "Leaks & Secrets", sev: "CRITICAL", title: "Hardcoded Slack or Tokenized Webhook URL", fix: "Move webhook URL to CI/CD encrypted secrets (e.g., ${{ secrets.SLACK_WEBHOOK_URL }})." },
+  { id: "pipe/npm-unpinned", cat: "Pipes & Dependencies", sev: "MEDIUM", title: "Unpinned npm Install in CI Without Lockfile Enforcement", fix: "Use npm ci to enforce lockfile versions or pass --save-exact when adding packages." }
 ];
 
 export const GRADE_COLORS = {
@@ -60,7 +65,7 @@ export function parseTar(buffer) {
   let offset = 0;
   const dec = new TextDecoder();
   const maxFiles = 300;
-  const scannableExts = new Set([".py", ".js", ".jsx", ".ts", ".tsx", ".html", ".htm", ".css", ".scss", ".env"]);
+  const scannableExts = new Set([".py", ".js", ".jsx", ".ts", ".tsx", ".html", ".htm", ".css", ".scss", ".env", ".yml", ".yaml", ".sh"]);
   const skipParts = new Set(["node_modules", ".git", "dist", "build", ".next", ".venv", "venv", "__pycache__"]);
 
   while (offset + 512 <= buffer.length && files.length < maxFiles) {
@@ -90,7 +95,9 @@ export function parseTar(buffer) {
       const ext = ("." + (relPath.split(".").pop() || "")).toLowerCase();
       const baseName = parts[parts.length - 1];
 
-      if (!hasSkip && (scannableExts.has(ext) || baseName.startsWith(".env"))) {
+      const isDockerfile = baseName === "Dockerfile" || baseName.startsWith("Dockerfile.");
+      const isGitlabCi = baseName === ".gitlab-ci.yml" || baseName === ".gitlab-ci.yaml";
+      if (!hasSkip && (scannableExts.has(ext) || baseName.startsWith(".env") || isDockerfile || isGitlabCi)) {
         const contentBuf = buffer.subarray(offset, offset + size);
         try {
           const content = dec.decode(contentBuf);
@@ -130,12 +137,15 @@ export function inspectFile(relPath, content) {
     });
   }
 
-  // 2. Clog: Swallowed exceptions
+  // 2. Clog: Swallowed exceptions (bare except: pass or except Exception: pass only)
   if (lower.includes("except") || lower.includes("catch")) {
     lines.forEach((l, idx) => {
       const clean = l.trim();
+      if (clean.startsWith("#") || clean.startsWith("//") || clean.startsWith("/*")) return;
       const nextClean = (lines[idx + 1] || "").trim();
-      if (/except(?:\s+\w+)?:\s*(?:pass|\.\.\.)/.test(clean) || (clean.startsWith("except") && clean.endsWith(":") && (nextClean === "pass" || nextClean === "..."))) {
+      const isPySwallowed = /except(?:\s+(?:\(\s*)?(?:Exception|BaseException)(?:\s*\))?)?\s*:\s*(?:pass|\.\.\.)/.test(clean) ||
+        (/^except(?:\s+(?:\(\s*)?(?:Exception|BaseException)(?:\s*\))?)?\s*:$/.test(clean) && (nextClean === "pass" || nextClean === "..."));
+      if (isPySwallowed) {
         issues.push({
           line: idx + 1,
           severity: "HIGH",
@@ -164,9 +174,11 @@ export function inspectFile(relPath, content) {
     lines.forEach((l, idx) => {
       const lLower = l.toLowerCase();
       if (["example", "dummy", "placeholder", "fake", "redact", "mask", "assert", "<key>"].some(w => lLower.includes(w))) return;
+      // Skip OpenSSH security key types and certificate identifiers
+      if (lLower.includes("@openssh") || lLower.includes("sk-ssh-") || lLower.includes("sk-ecdsa-")) return;
 
-      const mOpenAI = l.match(/\b(sk-(?:live|test|proj)?[a-zA-Z0-9_-]{20,})\b/);
-      if (mOpenAI) {
+      const mOpenAI = l.match(/\b(sk-(?:live|test|proj|admin)?[a-zA-Z0-9_-]{20,})\b/);
+      if (mOpenAI && !mOpenAI[1].includes("ssh") && !mOpenAI[1].includes("ecdsa")) {
         issues.push({
           line: idx + 1,
           severity: "CRITICAL",
@@ -340,6 +352,124 @@ export function inspectFile(relPath, content) {
     });
   }
 
+  const base = relPath.split("/").pop() || "";
+  const isYaml = ext === ".yml" || ext === ".yaml";
+  const isDockerfile = base === "Dockerfile" || base.startsWith("Dockerfile.");
+  const isShell = ext === ".sh";
+
+  // 12. Docker unpinned (pipe/docker-unpinned)
+  if (isYaml || isDockerfile) {
+    lines.forEach((l, idx) => {
+      const trim = l.trim();
+      if (!trim || trim.startsWith("#")) return;
+      let img = null;
+      if (isDockerfile) {
+        const m = /^FROM\s+(?:--platform=\S+\s+)?([^\s#]+)/i.exec(trim);
+        if (m && m[1].toLowerCase() !== "scratch" && !m[1].startsWith("$")) img = m[1];
+      } else if (isYaml) {
+        const m = /^image:\s*['"]?([^\s'"#]+)['"]?/i.exec(trim);
+        if (m && !m[1].startsWith("$")) img = m[1];
+        const dm = /\bdocker:\/\/([^\s'"#]+)/i.exec(trim);
+        if (dm && !dm[1].startsWith("$")) img = dm[1];
+      }
+      if (img) {
+        const hasDigest = img.includes("@sha256:");
+        const lastSlash = img.lastIndexOf("/");
+        const tagPart = img.slice(lastSlash + 1);
+        const colonIdx = tagPart.indexOf(":");
+        const tag = colonIdx !== -1 ? tagPart.slice(colonIdx + 1) : "";
+        if (!hasDigest && (colonIdx === -1 || tag.toLowerCase() === "latest")) {
+          issues.push({
+            line: idx + 1,
+            severity: "MEDIUM",
+            category: "Pipes & Dependencies",
+            rule_id: "pipe/docker-unpinned",
+            title: "Unpinned Docker Image (Missing Tag or :latest)",
+            evidence: trim.slice(0, 90),
+            fix: "Pin image to an explicit version tag or SHA256 digest (e.g., node:20.11-alpine)."
+          });
+        }
+      }
+    });
+  }
+
+  // 13. curl piped to shell (sec/curl-pipe-shell)
+  if (!isTest && (isYaml || isDockerfile || isShell)) {
+    lines.forEach((l, idx) => {
+      const trim = l.trim();
+      if (!trim || trim.startsWith("#") || trim.startsWith("//")) return;
+      if (/\b(?:curl|wget)\b[^|\n]*\|\s*(?:sudo\s+)?(?:ba|z|da|k)?sh\b/i.test(l)) {
+        issues.push({
+          line: idx + 1,
+          severity: "CRITICAL",
+          category: "Leaks & Secrets",
+          rule_id: "sec/curl-pipe-shell",
+          title: "Remote Script Piped Directly to Shell (curl | bash)",
+          evidence: trim.slice(0, 90),
+          fix: "Download script first, verify its SHA256 checksum or signature, then execute it."
+        });
+      }
+    });
+  }
+
+  // 14. Permissions write-all (sec/permissions-write-all)
+  if (isYaml) {
+    lines.forEach((l, idx) => {
+      const trim = l.trim();
+      if (!trim || trim.startsWith("#")) return;
+      if (/^permissions:\s*['"]?write-all['"]?\s*(?:#.*)?$/i.test(trim) || /^contents:\s*['"]?write['"]?\s*(?:#.*)?$/i.test(trim)) {
+        issues.push({
+          line: idx + 1,
+          severity: "HIGH",
+          category: "Leaks & Secrets",
+          rule_id: "sec/permissions-write-all",
+          title: "Overly Broad Workflow Write Permissions",
+          evidence: trim.slice(0, 90),
+          fix: "Use least-privilege permissions (e.g., permissions: { contents: read })."
+        });
+      }
+    });
+  }
+
+  // 15. Slack webhook secret (leak/slack-webhook)
+  if (!isTest && (content.includes("hooks.slack.com/") || content.includes("discord.com/api/webhooks/") || content.includes("discordapp.com/api/webhooks/"))) {
+    lines.forEach((l, idx) => {
+      const trim = l.trim();
+      if (!trim || trim.startsWith("#") || trim.startsWith("//")) return;
+      if (/https:\/\/hooks\.slack\.com\/services\/T[A-Za-z0-9_]+\/B[A-Za-z0-9_]+\/[A-Za-z0-9_]+/.test(l) ||
+          /https:\/\/(?:ptb\.|canary\.)?discord(?:app)?\.com\/api\/webhooks\/\d+\/[A-Za-z0-9_-]+/.test(l)) {
+        issues.push({
+          line: idx + 1,
+          severity: "CRITICAL",
+          category: "Leaks & Secrets",
+          rule_id: "leak/slack-webhook",
+          title: "Hardcoded Slack or Tokenized Webhook URL",
+          evidence: trim.slice(0, 90),
+          fix: "Move webhook URL to CI/CD encrypted secrets (e.g., ${{ secrets.SLACK_WEBHOOK_URL }})."
+        });
+      }
+    });
+  }
+
+  // 16. npm install without --save-exact (pipe/npm-unpinned)
+  if (isYaml || isDockerfile || isShell) {
+    lines.forEach((l, idx) => {
+      const trim = l.trim();
+      if (!trim || trim.startsWith("#")) return;
+      if (/\bnpm\s+(?:install|i)\b/.test(l) && !/--save-exact\b|\s-E\b|--package-lock-only\b/.test(l)) {
+        issues.push({
+          line: idx + 1,
+          severity: "MEDIUM",
+          category: "Pipes & Dependencies",
+          rule_id: "pipe/npm-unpinned",
+          title: "Unpinned npm Install in CI Without Lockfile Enforcement",
+          evidence: trim.slice(0, 90),
+          fix: "Use npm ci to enforce lockfile versions or pass --save-exact when adding packages."
+        });
+      }
+    });
+  }
+
   return issues;
 }
 
@@ -425,7 +555,7 @@ export function runInspection(files, owner, repo) {
 
   const durationSeconds = Math.round((Date.now() - started) / 10) / 100;
   const score = calculateScore(allIssues, totalLines);
-  const grade = calculateGrade(score);
+  const grade = calculateGrade(score, allIssues);
   const counts = { "CRITICAL": 0, "HIGH": 0, "MEDIUM": 0, "LOW": 0, "INFO": 0 };
   const categories = {
     "Leaks & Secrets": 0,
@@ -462,24 +592,32 @@ export function runInspection(files, owner, repo) {
 }
 
 export function calculateScore(issues, totalLines) {
-  if (!issues || issues.length === 0) return 0.0;
+  if (!issues || issues.length === 0) return 100.0;
   const weight = issues.reduce((acc, i) => acc + (SEVERITY_WEIGHTS[i.severity] || 1.0), 0);
   const density = ((weight / Math.max(totalLines, 200)) * 1000.0) * 0.8463;
-  const score = 100.0 * (1.0 - Math.exp(-density / 40.0));
-  return Math.round(score * 10) / 10;
+  const penalty = 100.0 * (1.0 - Math.exp(-density / 40.0));
+  const healthScore = Math.max(0, 100.0 - penalty);
+  return Math.round(healthScore * 10) / 10;
 }
 
-export function calculateGrade(score) {
-  if (score < 10.0) return "A";
-  if (score < 25.0) return "B";
-  if (score < 45.0) return "C";
-  if (score < 65.0) return "D";
-  return "F";
+export function calculateGrade(score, issues = []) {
+  let grade;
+  if (score >= 90.0) grade = "A";
+  else if (score >= 75.0) grade = "B";
+  else if (score >= 55.0) grade = "C";
+  else if (score >= 35.0) grade = "D";
+  else grade = "F";
+
+  // Critical leak override: if active critical leaks exist, grade cannot exceed C
+  if (issues && issues.some(i => i.severity === "CRITICAL")) {
+    if (grade === "A" || grade === "B") grade = "C";
+  }
+  return grade;
 }
 
 export function generateAgentBrief(slug, score, grade, fileReports) {
   if (!fileReports || fileReports.length === 0) {
-    return `# Plumber Inspection Brief for ${slug}\n\nNo leaks, clogs, or slop found! Repository scored 0.0/100 (Grade A).\n`;
+    return `# Plumber Inspection Brief for ${slug}\n\nNo leaks, clogs, or slop found! Repository scored 100.0/100 (Grade A).\n`;
   }
   const lines = [
     `# Plumber Inspection Brief: ${slug}`,

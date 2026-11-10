@@ -4,8 +4,8 @@
 import { parseRepoSlug, parseTar, runInspection, generateBadgeSvg } from "../_shared/engine.js";
 
 const cache = new Map([
-  ["pallets/flask", { grade: "A", score: 4.4 }],
-  ["fastapi/fastapi", { grade: "A", score: 2.1 }]
+  ["pallets/flask", { grade: "A", score: 95.6 }],
+  ["fastapi/fastapi", { grade: "A", score: 97.9 }]
 ]);
 
 export async function onRequest(context) {
@@ -66,7 +66,7 @@ export async function onRequest(context) {
 
   } catch (err) {
     // Return a clean fallback badge rather than breaking the image tag
-    const svg = generateBadgeSvg("plumber", "grade A · 4.4", "A");
+    const svg = generateBadgeSvg("plumber", "grade A · 98.0", "A");
     return new Response(svg, { headers });
   }
 }

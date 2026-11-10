@@ -178,7 +178,7 @@ function inspectFile(relPath, content, lines, ext) {
     lines.forEach((l, idx) => {
       const trim = l.trim();
       if (trim.startsWith('#') || trim.startsWith('//') || trim.startsWith('/*')) return;
-      if (ext === '.py' && /^\s*except(?:\s+\w+)?:\s*(?:pass|\.\.\.)/.test(l)) {
+      if (ext === '.py' && /^\s*except(?:\s+(?:\(\s*)?(?:Exception|BaseException)(?:\s*\))?)?\s*:\s*(?:pass|\.\.\.)/.test(l)) {
         issues.push({ rule_id: 'clog/swallowed-error', title: 'Swallowed Exception (Silent Failure)', severity: 'HIGH', line: idx + 1, evidence: trim, fix: 'Log the error or properly re-raise/handle it.' });
       } else if (ext !== '.py' && /catch\s*\([^)]*\)\s*\{\s*\}/.test(l)) {
         issues.push({ rule_id: 'clog/swallowed-error', title: 'Swallowed Exception (Silent Failure)', severity: 'HIGH', line: idx + 1, evidence: trim, fix: 'Log the error or properly re-raise/handle it.' });
@@ -191,6 +191,7 @@ function inspectFile(relPath, content, lines, ext) {
     lines.forEach((l, idx) => {
       const trim = l.trim();
       if (trim.startsWith('#') || trim.startsWith('//')) return;
+      if (trim.includes('@openssh') || trim.includes('sk-ssh-') || trim.includes('sk-ecdsa-')) return;
       if (/\b(sk-(?:live|test|proj)?[a-zA-Z0-9_-]{24,})\b/.test(l)) {
         issues.push({ rule_id: 'leak/api-key', title: 'Leaked OpenAI / Model API Key', severity: 'CRITICAL', line: idx + 1, evidence: trim.slice(0, 70), fix: 'Extract secret to .env file immediately.' });
       }

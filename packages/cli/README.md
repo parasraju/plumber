@@ -36,7 +36,7 @@ npx plumber-linter scan . --fail-on high
 npx plumber-linter scan . --format md
 npx plumber-linter scan . --format json
 
-# View all 21 inspection rules
+# View all 26 inspection rules
 npx plumber-linter rules
 ```
 
@@ -107,6 +107,13 @@ Spots hallucinated library imports invented by LLMs or packages missing from pro
 - **Vulnerable:** `import { useFeature } from "next-auth-v5-helpers";`
 - **Fixed:** Use standard verified libraries and declare dependencies in manifests.
 
+### 8. CI/CD Supply-Chain & Pipeline Rules (v1.2.0)
+- `pipe/docker-unpinned` — Flags unpinned Docker images (missing tag or `:latest`) in CI jobs or Dockerfiles (`MEDIUM`).
+- `sec/curl-pipe-shell` — Flags `curl ... | bash` / `wget ... | sh` remote script execution in run steps (`CRITICAL`).
+- `sec/permissions-write-all` — Flags overly broad workflow permissions (`permissions: write-all` or top-level `contents: write`) (`HIGH`).
+- `leak/slack-webhook` — Flags hardcoded Slack or tokenized webhook URLs in workflow and source files (`CRITICAL`).
+- `pipe/npm-unpinned` — Flags `npm install` steps in CI without `--save-exact` or `npm ci` lockfile enforcement (`MEDIUM`).
+
 ---
 
 ## Example Output
@@ -140,3 +147,14 @@ Spots hallucinated library imports invented by LLMs or packages missing from pro
 - **npm Package:** [https://www.npmjs.com/package/plumber-linter](https://www.npmjs.com/package/plumber-linter)
 - **Website & Documentation:** [https://plumber-7dv.pages.dev/](https://plumber-7dv.pages.dev/)
 - **GitHub Repository:** [https://github.com/parasraju/plumber](https://github.com/parasraju/plumber)
+
+---
+
+## Changelog
+
+## 1.2.0
+- `pipe/docker-unpinned`: Flag unpinned Docker images (no tag or `:latest`) in CI jobs and Dockerfiles (`MEDIUM`).
+- `sec/curl-pipe-shell`: Flag `curl | bash` and `wget | sh` remote script execution in CI run steps (`CRITICAL`).
+- `sec/permissions-write-all`: Flag overly broad workflow write permissions (`permissions: write-all`, `contents: write`) (`HIGH`).
+- `leak/slack-webhook`: Flag hardcoded Slack and tokenized webhook URLs in workflows and code (`CRITICAL`).
+- `pipe/npm-unpinned`: Flag `npm install` in CI steps without `--save-exact` or `npm ci` lockfile enforcement (`MEDIUM`).

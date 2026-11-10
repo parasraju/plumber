@@ -1,6 +1,6 @@
 {
   "name": "plumber-linter",
-  "version": "1.1.2",
+  "version": "1.2.0",
   "description": "CI/CD pipeline linter that flags hardcoded secrets, leaked credentials, and dead code — with fixes in plain English.",
   "main": "bin/plumber.js",
   "bin": {
@@ -19,7 +19,10 @@
     "security",
     "github",
     "workflow",
-    "cli"
+    "cli",
+    "docker",
+    "supply-chain",
+    "slack"
   ],
   "author": "Paras Raju",
   "license": "MIT",

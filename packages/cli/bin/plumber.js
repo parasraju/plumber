@@ -16,7 +16,7 @@ const API_BASE = process.env.PLUMBER_API_URL || 'http://localhost:3100';
 const HOOK_MARKER = '# plumber-managed-hook';
 const HOOK_BACKUP_SUFFIX = '.pre-plumber';
 const ENV_TEMPLATE_RE = /\.(example|sample|template|dist)$/;
-const SCANNABLE_EXTS = new Set(['.py', '.js', '.jsx', '.ts', '.tsx', '.html', '.htm', '.css', '.scss', '.less', '.vue', '.svelte', '.astro', '.go', '.rs', '.java', '.env']);
+const SCANNABLE_EXTS = new Set(['.py', '.js', '.jsx', '.ts', '.tsx', '.html', '.htm', '.css', '.scss', '.less', '.vue', '.svelte', '.astro', '.go', '.rs', '.java', '.env', '.yml', '.yaml', '.sh']);
 
 const PRE_COMMIT_SCRIPT = `#!/bin/sh
 ${HOOK_MARKER}
@@ -65,7 +65,12 @@ const RULES = [
   { id: 'slop/chatbot-residue', cat: 'AI Slop Tells', sev: 'MEDIUM', title: 'Pasted Chatbot Conversational Residue', fix: 'Delete conversational intro/outro boilerplate.' },
   { id: 'slop/neon-glow', cat: 'AI Slop Tells', sev: 'LOW', title: 'Colored Neon Glow Shadow', fix: 'Replace with subtle crisp 1px borders.' },
   { id: 'slop/gradient-text', cat: 'AI Slop Tells', sev: 'LOW', title: 'Gradient-Clipped Headline Text', fix: 'Use solid, high-contrast typography.' },
-  { id: 'ui/important-abuse', cat: 'AI Slop Tells', sev: 'LOW', title: '!important Overrides in Stylesheet', fix: 'Structure CSS cascade cleanly without !important.' }
+  { id: 'ui/important-abuse', cat: 'AI Slop Tells', sev: 'LOW', title: '!important Overrides in Stylesheet', fix: 'Structure CSS cascade cleanly without !important.' },
+  { id: 'pipe/docker-unpinned', cat: 'Pipes & Dependencies', sev: 'MEDIUM', title: 'Unpinned Docker Image (Missing Tag or :latest)', fix: 'Pin image to an explicit version tag or SHA256 digest (e.g., node:20.11-alpine).' },
+  { id: 'sec/curl-pipe-shell', cat: 'Leaks & Secrets', sev: 'CRITICAL', title: 'Remote Script Piped Directly to Shell (curl | bash)', fix: 'Download script first, verify its SHA256 checksum or signature, then execute it.' },
+  { id: 'sec/permissions-write-all', cat: 'Leaks & Secrets', sev: 'HIGH', title: 'Overly Broad Workflow Write Permissions', fix: 'Use least-privilege permissions (e.g., permissions: { contents: read }).' },
+  { id: 'leak/slack-webhook', cat: 'Leaks & Secrets', sev: 'CRITICAL', title: 'Hardcoded Slack or Tokenized Webhook URL', fix: 'Move webhook URL to CI/CD encrypted secrets (e.g., ${{ secrets.SLACK_WEBHOOK_URL }}).' },
+  { id: 'pipe/npm-unpinned', cat: 'Pipes & Dependencies', sev: 'MEDIUM', title: 'Unpinned npm Install in CI Without Lockfile Enforcement', fix: 'Use npm ci to enforce lockfile versions or pass --save-exact when adding packages.' }
 ];
 
 const SEV_WEIGHT = { CRITICAL: 4, HIGH: 3, MEDIUM: 2, LOW: 1, INFO: 0 };
@@ -114,7 +119,7 @@ COMMANDS:
   install-hook            Block git commits that contain secrets, .env files, or dead code
   uninstall-hook          Remove the Plumber pre-commit hook
   clean [path]            Remove unreachable dead code (dry run unless --write)
-  rules                   Display catalogue of 21 inspection rules
+  rules                   Display catalogue of 26 inspection rules
   mcp                     Run stdio Model Context Protocol (MCP) server for Claude / Cursor
 
 OPTIONS:
@@ -158,7 +163,7 @@ async function runScan(target, fmt, failOn) {
 }
 
 function scanLocalDirectory(dirPath) {
-  const scannableExts = new Set(['.py', '.js', '.jsx', '.ts', '.tsx', '.html', '.htm', '.css', '.scss', '.env']);
+  const scannableExts = new Set(['.py', '.js', '.jsx', '.ts', '.tsx', '.html', '.htm', '.css', '.scss', '.env', '.yml', '.yaml', '.sh']);
   const skipDirs = new Set(['.git', 'node_modules', 'dist', 'build', '.next', '.nuxt', 'vendor', '.venv', 'venv', '__pycache__']);
   
   const issues = [];
@@ -171,16 +176,19 @@ function scanLocalDirectory(dirPath) {
     if (stat.isFile()) {
       const ext = path.extname(current).toLowerCase();
       const base = path.basename(current);
-      if (scannableExts.has(ext) || base.startsWith('.env')) {
+      const isDockerfile = base === 'Dockerfile' || base.startsWith('Dockerfile.');
+      const isGitlabCi = base === '.gitlab-ci.yml' || base === '.gitlab-ci.yaml';
+      if (scannableExts.has(ext) || base.startsWith('.env') || isDockerfile || isGitlabCi) {
         totalFiles++;
         try {
           const content = fs.readFileSync(current, 'utf-8');
           const lines = content.split('\n');
           totalLines += lines.length;
-          const fileIssues = inspectFile(path.relative(dirPath, current).replace(/\\/g, '/'), content, lines, ext);
+          const rel = (current === dirPath ? base : path.relative(dirPath, current)).replace(/\\/g, '/');
+          const fileIssues = inspectFile(rel, content, lines, ext);
           if (fileIssues.length > 0) {
             issues.push(...fileIssues);
-            fileReports.push({ path: path.relative(dirPath, current).replace(/\\/g, '/'), issues: fileIssues });
+            fileReports.push({ path: rel, issues: fileIssues });
           }
         } catch (err) {
           // Skip unreadable or locked files
@@ -191,7 +199,7 @@ function scanLocalDirectory(dirPath) {
 
     if (stat.isDirectory()) {
       const base = path.basename(current);
-      if (skipDirs.has(base) || (base.startsWith('.') && base !== '.')) return;
+      if (skipDirs.has(base) || (base.startsWith('.') && base !== '.' && base !== '.github' && base !== '.circleci')) return;
       const entries = fs.readdirSync(current);
       for (const entry of entries) {
         walk(path.join(current, entry));
@@ -289,6 +297,118 @@ function inspectFile(relPath, content, lines, ext) {
       line: dead.line,
       evidence: dead.evidence.slice(0, 100),
       fix: dead.removable ? "Delete this unreachable line or run 'plumber clean <path> --write'." : 'Remove the constant-false branch and its body.'
+    });
+  }
+
+  const isYaml = ext === '.yml' || ext === '.yaml';
+  const isDockerfile = base === 'Dockerfile' || base.startsWith('Dockerfile.');
+  const isShell = ext === '.sh';
+
+  // 1. Docker unpinned (pipe/docker-unpinned)
+  if (isYaml || isDockerfile) {
+    lines.forEach((l, idx) => {
+      const trim = l.trim();
+      if (!trim || trim.startsWith('#')) return;
+      let img = null;
+      if (isDockerfile) {
+        const m = /^FROM\s+(?:--platform=\S+\s+)?([^\s#]+)/i.exec(trim);
+        if (m && m[1].toLowerCase() !== 'scratch' && !m[1].startsWith('$')) img = m[1];
+      } else if (isYaml) {
+        const m = /^image:\s*['"]?([^\s'"#]+)['"]?/i.exec(trim);
+        if (m && !m[1].startsWith('$')) img = m[1];
+        const dm = /\bdocker:\/\/([^\s'"#]+)/i.exec(trim);
+        if (dm && !dm[1].startsWith('$')) img = dm[1];
+      }
+      if (img) {
+        const hasDigest = img.includes('@sha256:');
+        const lastSlash = img.lastIndexOf('/');
+        const tagPart = img.slice(lastSlash + 1);
+        const colonIdx = tagPart.indexOf(':');
+        const tag = colonIdx !== -1 ? tagPart.slice(colonIdx + 1) : '';
+        if (!hasDigest && (colonIdx === -1 || tag.toLowerCase() === 'latest')) {
+          issues.push({
+            rule_id: 'pipe/docker-unpinned',
+            title: 'Unpinned Docker Image (Missing Tag or :latest)',
+            severity: 'MEDIUM',
+            line: idx + 1,
+            evidence: trim.slice(0, 90),
+            fix: 'Pin image to an explicit version tag or SHA256 digest (e.g., node:20.11-alpine).'
+          });
+        }
+      }
+    });
+  }
+
+  // 2. curl piped to shell (sec/curl-pipe-shell)
+  if (!isTest && (isYaml || isDockerfile || isShell)) {
+    lines.forEach((l, idx) => {
+      const trim = l.trim();
+      if (!trim || trim.startsWith('#') || trim.startsWith('//')) return;
+      if (/\b(?:curl|wget)\b[^|\n]*\|\s*(?:sudo\s+)?(?:ba|z|da|k)?sh\b/i.test(l)) {
+        issues.push({
+          rule_id: 'sec/curl-pipe-shell',
+          title: 'Remote Script Piped Directly to Shell (curl | bash)',
+          severity: 'CRITICAL',
+          line: idx + 1,
+          evidence: trim.slice(0, 90),
+          fix: 'Download script first, verify its SHA256 checksum or signature, then execute it.'
+        });
+      }
+    });
+  }
+
+  // 3. Permissions write-all (sec/permissions-write-all)
+  if (isYaml) {
+    lines.forEach((l, idx) => {
+      const trim = l.trim();
+      if (!trim || trim.startsWith('#')) return;
+      if (/^permissions:\s*['"]?write-all['"]?\s*(?:#.*)?$/i.test(trim) || /^contents:\s*['"]?write['"]?\s*(?:#.*)?$/i.test(trim)) {
+        issues.push({
+          rule_id: 'sec/permissions-write-all',
+          title: 'Overly Broad Workflow Write Permissions',
+          severity: 'HIGH',
+          line: idx + 1,
+          evidence: trim.slice(0, 90),
+          fix: 'Use least-privilege permissions (e.g., permissions: { contents: read }).'
+        });
+      }
+    });
+  }
+
+  // 4. Slack webhook secret (leak/slack-webhook)
+  if (!isTest && (content.includes('hooks.slack.com/') || content.includes('discord.com/api/webhooks/') || content.includes('discordapp.com/api/webhooks/'))) {
+    lines.forEach((l, idx) => {
+      const trim = l.trim();
+      if (!trim || trim.startsWith('#') || trim.startsWith('//')) return;
+      if (/https:\/\/hooks\.slack\.com\/services\/T[A-Za-z0-9_]+\/B[A-Za-z0-9_]+\/[A-Za-z0-9_]+/.test(l) ||
+          /https:\/\/(?:ptb\.|canary\.)?discord(?:app)?\.com\/api\/webhooks\/\d+\/[A-Za-z0-9_-]+/.test(l)) {
+        issues.push({
+          rule_id: 'leak/slack-webhook',
+          title: 'Hardcoded Slack or Tokenized Webhook URL',
+          severity: 'CRITICAL',
+          line: idx + 1,
+          evidence: trim.slice(0, 90),
+          fix: 'Move webhook URL to CI/CD encrypted secrets (e.g., ${{ secrets.SLACK_WEBHOOK_URL }}).'
+        });
+      }
+    });
+  }
+
+  // 5. npm install without --save-exact (pipe/npm-unpinned)
+  if (isYaml || isDockerfile || isShell) {
+    lines.forEach((l, idx) => {
+      const trim = l.trim();
+      if (!trim || trim.startsWith('#')) return;
+      if (/\bnpm\s+(?:install|i)\b/.test(l) && !/--save-exact\b|\s-E\b|--package-lock-only\b/.test(l)) {
+        issues.push({
+          rule_id: 'pipe/npm-unpinned',
+          title: 'Unpinned npm Install in CI Without Lockfile Enforcement',
+          severity: 'MEDIUM',
+          line: idx + 1,
+          evidence: trim.slice(0, 90),
+          fix: 'Use npm ci to enforce lockfile versions or pass --save-exact when adding packages.'
+        });
+      }
     });
   }
 
@@ -534,7 +654,8 @@ function runHook(argv) {
     const base = path.basename(rel);
     const ext = path.extname(rel).toLowerCase();
     const isEnv = base.startsWith('.env');
-    if (!isEnv && !SCANNABLE_EXTS.has(ext)) continue;
+    const isDockerfile = base === 'Dockerfile' || base.startsWith('Dockerfile.');
+    if (!isEnv && !isDockerfile && !SCANNABLE_EXTS.has(ext)) continue;
 
     let content;
     try {

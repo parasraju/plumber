@@ -1,6 +1,6 @@
 # Plumber
 
-CI/CD pipeline linter that flags hardcoded secrets, leaked credentials, and dead code — with fixes in plain English.
+CI/CD pipeline linter that flags hardcoded secrets, leaked credentials, and dead code — with fixes in plain English, plus SARIF output for GitHub code scanning.
 
 [![npm version](https://img.shields.io/npm/v/plumber-linter.svg)](https://www.npmjs.com/package/plumber-linter)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://github.com/parasraju/plumber/blob/main/LICENSE)
@@ -32,9 +32,10 @@ npx plumber-linter scan .
 # Enforce quality gate in CI (exit 1 on HIGH or CRITICAL issues)
 npx plumber-linter scan . --fail-on high
 
-# Export report as Markdown or JSON
+# Export report as Markdown, JSON, or SARIF 2.1.0
 npx plumber-linter scan . --format md
 npx plumber-linter scan . --format json
+npx plumber-linter scan . --format sarif
 
 # View all 26 inspection rules
 npx plumber-linter rules
@@ -66,6 +67,38 @@ npx plumber-linter install-hook --fail-on high
 
 # Uninstall hook
 npx plumber-linter uninstall-hook
+```
+
+### SARIF output for GitHub code scanning
+
+`plumber scan . --format sarif` writes SARIF 2.1.0 JSON to stdout. The file contains one run for `plumber-linter` 1.3.0, every inspection rule (id, name, description, and the plain-English fix in `help.text`), and one result per finding. Each result's `message.text` repeats that finding's explanation and fix. Paths are relative to the scanned directory, and the line is included when the engine recorded one.
+
+```bash
+npx plumber-linter scan . --format sarif > results.sarif
+```
+
+Upload `results.sarif` with GitHub's `upload-sarif` action. The action name, the `sarif_file` input, and the `security-events: write` permission below are taken from GitHub's [Uploading a SARIF file to GitHub](https://docs.github.com/en/code-security/how-tos/find-and-fix-code-vulnerabilities/integrate-with-existing-tools/upload-sarif-file) guide. `partialFingerprints` is left unset; that same action calculates it when the repository contains both the SARIF file and the scanned source.
+
+```yaml
+name: Plumber code scanning
+on:
+  push:
+jobs:
+  plumber:
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+      actions: read
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+      - name: Run Plumber
+        run: npx plumber-linter scan . --format sarif > results.sarif
+      - name: Upload SARIF file
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: results.sarif
 ```
 
 ---
@@ -151,6 +184,9 @@ Spots hallucinated library imports invented by LLMs or packages missing from pro
 ---
 
 ## Changelog
+
+## 1.3.0
+SARIF output (`--format sarif`) for GitHub code scanning.
 
 ## 1.2.0
 - `pipe/docker-unpinned`: Flag unpinned Docker images (no tag or `:latest`) in CI jobs and Dockerfiles (`MEDIUM`).

@@ -1,0 +1,80 @@
+{
+  "repo_name": "sample",
+  "total_files": 1,
+  "total_lines": 14,
+  "score": 83.2,
+  "grade": "B",
+  "issues": [
+    {
+      "rule_id": "pipe/docker-unpinned",
+      "title": "Unpinned Docker Image (Missing Tag or :latest)",
+      "severity": "MEDIUM",
+      "line": 8,
+      "evidence": "image: node:latest",
+      "fix": "Pin image to an explicit version tag or SHA256 digest (e.g., node:20.11-alpine)."
+    },
+    {
+      "rule_id": "sec/curl-pipe-shell",
+      "title": "Remote Script Piped Directly to Shell (curl | bash)",
+      "severity": "CRITICAL",
+      "line": 11,
+      "evidence": "run: curl https://example.com/install.sh | bash",
+      "fix": "Download script first, verify its SHA256 checksum or signature, then execute it."
+    },
+    {
+      "rule_id": "sec/permissions-write-all",
+      "title": "Overly Broad Workflow Write Permissions",
+      "severity": "HIGH",
+      "line": 3,
+      "evidence": "permissions: write-all",
+      "fix": "Use least-privilege permissions (e.g., permissions: { contents: read })."
+    },
+    {
+      "rule_id": "pipe/npm-unpinned",
+      "title": "Unpinned npm Install in CI Without Lockfile Enforcement",
+      "severity": "MEDIUM",
+      "line": 13,
+      "evidence": "run: npm install left-pad",
+      "fix": "Use npm ci to enforce lockfile versions or pass --save-exact when adding packages."
+    }
+  ],
+  "file_reports": [
+    {
+      "path": "ci.yml",
+      "issues": [
+        {
+          "rule_id": "pipe/docker-unpinned",
+          "title": "Unpinned Docker Image (Missing Tag or :latest)",
+          "severity": "MEDIUM",
+          "line": 8,
+          "evidence": "image: node:latest",
+          "fix": "Pin image to an explicit version tag or SHA256 digest (e.g., node:20.11-alpine)."
+        },
+        {
+          "rule_id": "sec/curl-pipe-shell",
+          "title": "Remote Script Piped Directly to Shell (curl | bash)",
+          "severity": "CRITICAL",
+          "line": 11,
+          "evidence": "run: curl https://example.com/install.sh | bash",
+          "fix": "Download script first, verify its SHA256 checksum or signature, then execute it."
+        },
+        {
+          "rule_id": "sec/permissions-write-all",
+          "title": "Overly Broad Workflow Write Permissions",
+          "severity": "HIGH",
+          "line": 3,
+          "evidence": "permissions: write-all",
+          "fix": "Use least-privilege permissions (e.g., permissions: { contents: read })."
+        },
+        {
+          "rule_id": "pipe/npm-unpinned",
+          "title": "Unpinned npm Install in CI Without Lockfile Enforcement",
+          "severity": "MEDIUM",
+          "line": 13,
+          "evidence": "run: npm install left-pad",
+          "fix": "Use npm ci to enforce lockfile versions or pass --save-exact when adding packages."
+        }
+      ]
+    }
+  ]
+}

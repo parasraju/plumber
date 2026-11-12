@@ -1,7 +1,7 @@
 {
   "name": "plumber-linter",
-  "version": "1.2.0",
-  "description": "CI/CD pipeline linter that flags hardcoded secrets, leaked credentials, and dead code — with fixes in plain English.",
+  "version": "1.3.0",
+  "description": "CI/CD pipeline linter that flags hardcoded secrets, leaked credentials, and dead code — with fixes in plain English, plus SARIF output for GitHub code scanning.",
   "main": "bin/plumber.js",
   "bin": {
     "plumber": "bin/plumber.js",
@@ -22,7 +22,9 @@
     "cli",
     "docker",
     "supply-chain",
-    "slack"
+    "slack",
+    "sarif",
+    "github-code-scanning"
   ],
   "author": "Paras Raju",
   "license": "MIT",

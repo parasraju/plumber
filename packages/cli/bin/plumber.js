@@ -74,6 +74,8 @@ const RULES = [
 ];
 
 const SEV_WEIGHT = { CRITICAL: 4, HIGH: 3, MEDIUM: 2, LOW: 1, INFO: 0 };
+const SARIF_SCHEMA = 'https://json.schemastore.org/sarif-2.1.0.json';
+const INFORMATION_URI = 'https://github.com/parasraju/plumber';
 
 // Main entry
 const args = process.argv.slice(2);
@@ -104,7 +106,7 @@ if (cmd === 'mcp') {
 
 function printHelp() {
   console.log(`
-Plumber — Code Leak, Clog, and AI Slop Inspector (v1.0.0)
+Plumber — Code Leak, Clog, and AI Slop Inspector (v1.3.0)
 
 USAGE:
   npx plumber-linter scan [target] [options]
@@ -123,7 +125,7 @@ COMMANDS:
   mcp                     Run stdio Model Context Protocol (MCP) server for Claude / Cursor
 
 OPTIONS:
-  --format [pretty|json|md]  Output format (default: pretty)
+  --format [pretty|json|md|sarif]  Output format (default: pretty)
   --fail-on [critical|high|medium|low]  Exit code 1 if issues >= severity exist
 `);
 }
@@ -480,6 +482,93 @@ function findUnreachable(lines, start, indent, skip, isPy) {
   return null;
 }
 
+function sarifLevel(severity) {
+  const level = String(severity || '').toUpperCase();
+  if (level === 'CRITICAL' || level === 'HIGH') return 'error';
+  if (level === 'MEDIUM') return 'warning';
+  return 'note';
+}
+
+function readPackageVersion() {
+  const pkgPath = path.join(__dirname, '..', 'package.json');
+  const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
+  if (typeof pkg.version !== 'string' || pkg.version.length === 0) {
+    throw new Error(`Missing version in ${pkgPath}`);
+  }
+  return pkg.version;
+}
+
+function sarifArtifactUri(filePath) {
+  return String(filePath).replace(/\\/g, '/').split('/').map((segment) => encodeURIComponent(segment)).join('/');
+}
+
+function sarifMessage(issue) {
+  const explanation = String(issue.title || issue.rule_id || 'Plumber finding').trim();
+  const sentence = /[.!?]$/.test(explanation) ? explanation : `${explanation}.`;
+  const fix = String(issue.fix || '').trim();
+  if (!fix) return sentence;
+  return `${sentence} Fix: ${fix}`;
+}
+
+function sarifResult(issue, filePath, ruleIndexById) {
+  const result = { ruleId: issue.rule_id };
+  const ruleIndex = ruleIndexById.get(issue.rule_id);
+  if (ruleIndex !== undefined) result.ruleIndex = ruleIndex;
+  result.level = sarifLevel(issue.severity);
+  result.message = { text: sarifMessage(issue) };
+  if (filePath) {
+    const physicalLocation = {
+      artifactLocation: { uri: sarifArtifactUri(filePath) }
+    };
+    // Region is omitted when the engine has no line. Line 1 is not invented.
+    if (Number.isInteger(issue.line) && issue.line >= 1) {
+      physicalLocation.region = { startLine: issue.line };
+    }
+    result.locations = [{ physicalLocation }];
+  }
+  return result;
+}
+
+function buildSarif(report) {
+  const ruleIndexById = new Map(RULES.map((rule, index) => [rule.id, index]));
+  const covered = new Set();
+  const results = [];
+  for (const file of report.file_reports || []) {
+    for (const issue of file.issues) {
+      covered.add(issue);
+      results.push(sarifResult(issue, file.path, ruleIndexById));
+    }
+  }
+  for (const issue of report.issues || []) {
+    if (!covered.has(issue)) results.push(sarifResult(issue, null, ruleIndexById));
+  }
+
+  return {
+    $schema: SARIF_SCHEMA,
+    version: '2.1.0',
+    runs: [
+      {
+        tool: {
+          driver: {
+            name: 'plumber-linter',
+            version: readPackageVersion(),
+            informationUri: INFORMATION_URI,
+            rules: RULES.map((rule) => ({
+              id: rule.id,
+              name: rule.title,
+              shortDescription: { text: rule.title },
+              fullDescription: { text: rule.title },
+              help: { text: rule.fix },
+              defaultConfiguration: { level: sarifLevel(rule.sev) }
+            }))
+          }
+        },
+        results
+      }
+    ]
+  };
+}
+
 function renderReport(report, fmt, failOn) {
   if (fmt === 'json') {
     console.log(JSON.stringify(report, null, 2));
@@ -492,6 +581,8 @@ function renderReport(report, fmt, failOn) {
         console.log(`- **L${i.line} [${i.severity}] ${i.title}**: ${i.fix}`);
       }
     }
+  } else if (fmt === 'sarif') {
+    console.log(JSON.stringify(buildSarif(report), null, 2));
   } else {
     console.log('\n' + '='.repeat(64));
     console.log(`  PLUMBER INSPECTION REPORT: ${report.repo_name}`);

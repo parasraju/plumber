@@ -1,0 +1,4 @@
+expected.md text eol=lf
+expected.json text eol=lf
+sample-ci.yml.txt text eol=lf
+clean/app.js text eol=lf

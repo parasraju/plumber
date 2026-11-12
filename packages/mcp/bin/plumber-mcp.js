@@ -5,7 +5,7 @@
  *
  * Tools:
  *   plumber_scan        scan a local directory or file
- *   plumber_list_rules  list the 21 inspection rules
+ *   plumber_list_rules  list every inspection rule
  *   plumber_scan_text   scan a pasted snippet
  *
  * Only JSON-RPC goes to stdout. Diagnostics go to stderr.

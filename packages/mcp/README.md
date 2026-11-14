@@ -83,15 +83,15 @@ Add to `.vscode/mcp.json`:
 
 | Tool | Description |
 | --- | --- |
-| `plumber_scan` | Scan a local directory or file. Returns a score, grade, file count, and one line per issue with its fix. |
-| `plumber_list_rules` | List all 26 inspection rules with id, severity, title, and fix. |
-| `plumber_scan_text` | Scan a pasted code or config snippet. `filename` is optional and only selects the applicable rules. |
+| `plumber_scan` | Scan a local directory or file. Returns a score, grade, file count, and one line per issue with its fix. Optional `rulesFile`, or `.plumber-rules.json` in the target, adds a rule pack. |
+| `plumber_list_rules` | List all 26 inspection rules with id, severity, title, and fix. Optional `rulesFile` appends pack rules marked `source: pack`. |
+| `plumber_scan_text` | Scan a pasted code or config snippet. `filename` is optional and only selects the applicable rules. Optional `rulesFile` adds a rule pack. |
 
 Tool inputs are deliberately small so they cost few tokens:
 
-- `plumber_scan`: `target` (string, default `"."`)
-- `plumber_list_rules`: none
-- `plumber_scan_text`: `text` (string, required), `filename` (string, optional)
+- `plumber_scan`: `target` (string, default `"."`), `rulesFile` (string, optional)
+- `plumber_list_rules`: `rulesFile` (string, optional)
+- `plumber_scan_text`: `text` (string, required), `filename` (string, optional), `rulesFile` (string, optional)
 
 ## Example session
 
@@ -125,6 +125,72 @@ Tool inputs are deliberately small so they cost few tokens:
 - `sec/job-permissions` [HIGH] Job Writes Without Least-Privilege Permissions (Set least-privilege permissions on the job.)
 - `sec/secret-to-untrusted` [HIGH] Secret Passed to Untrusted Step (Scope the secret to the trusted step that needs it.)
 
+### Custom rule packs — bring your own rules
+
+Bring rule packs when you need custom rules the built-in set does not ship: an internal secret format, a banned pattern, or a house naming rule. A pack is one local JSON file. This release does not read YAML packs, and it does not download a pack from a URL.
+
+The file is a top-level object `{ "rules": [...] }`. Each rule uses these fields:
+
+- `id` (string, required) — must start with `custom/`, for example `custom/no-internal-api-key`. Any other id is rejected. An id that matches a built-in rule, or another rule in the same pack, is rejected. The built-in rule is left unchanged.
+- `severity` (string, required) — one of `CRITICAL`, `HIGH`, `MEDIUM`, `LOW`. Anything else is rejected.
+- `title` (string, required) — short name, for example `Internal API key format`.
+- `pattern` (string, required) — a JavaScript regular expression, matched against the file text. A pattern that does not compile rejects that rule.
+- `files` (array of glob strings, optional) — for example `["**/*.js", "**/*.ts"]`. The rule runs only on files that match one of these globs. Omit it to use every file Plumber already scans. Globs support `*`, `?`, and `**`. `*` does not cross a `/`; use `**/*.js` to match JavaScript in any directory.
+- `fix` (string, required) — the plain-English fix, in the same voice as the built-in rules. A rule with no fix is rejected.
+
+On `plumber_scan`, globs only filter files the scanner already opens: `.py`, `.js`, `.jsx`, `.ts`, `.tsx`, `.html`, `.htm`, `.css`, `.scss`, `.env*`, and GitHub Actions workflow YAML. `plumber_scan_text` applies the same globs to the `filename` you pass.
+
+A bad rule is dropped. The tool result includes a `Pack error:` line that names the rule and the problem (invalid JSON names the pack file, because there is no rule yet). The 26 built-in rules still run. A broken pack does not wipe the report and does not stop the server.
+
+One pack is loaded, in this order:
+
+1. `rulesFile`, when the tool call includes it. A relative path is resolved from the server's working directory.
+2. Auto-load, only for `plumber_scan`, and only when `rulesFile` is omitted. Plumber reads `.plumber-rules.json` in the directory passed as `target`. A file target uses the directory that contains that file. Parent folders and subfolders are not searched. `plumber_scan_text` and `plumber_list_rules` do not auto-load.
+3. When both are present, `rulesFile` is the pack that runs. The two files are not merged.
+
+The scan result names the pack on one line: the file path and how many pack rules loaded, for example `Pack: /repo/.plumber-rules.json (2 pack rules loaded)`.
+
+`plumber_list_rules` with no `rulesFile` returns the 26 built-in rules. With `rulesFile`, the pack rules follow the built-ins and each one ends with `source: pack`.
+
+Save this file as `.plumber-rules.json` in the directory you scan, or pass the path as `rulesFile`. The same example ships at `examples/custom-rules.example.json`.
+
+```json
+{
+  "rules": [
+    {
+      "id": "custom/no-internal-api-key",
+      "severity": "CRITICAL",
+      "title": "Internal API key format",
+      "pattern": "\\bINT_[A-Z0-9]{16}\\b",
+      "files": ["**/*.js", "**/*.ts"],
+      "fix": "Move the internal key to an environment variable and rotate it."
+    },
+    {
+      "id": "custom/no-banned-marker",
+      "severity": "MEDIUM",
+      "title": "Banned ship marker",
+      "pattern": "\\bDO_NOT_SHIP\\b",
+      "files": ["**/*.js", "**/*.py"],
+      "fix": "Remove the banned marker before committing this file."
+    }
+  ]
+}
+```
+
+Three ways to run that pack:
+
+1. Auto-load: write it to `.plumber-rules.json`, then call `plumber_scan` with `{ "target": "." }`.
+2. `rulesFile` on `plumber_scan`: `{ "target": ".", "rulesFile": "examples/custom-rules.example.json" }`. This is the pack that runs when `.plumber-rules.json` is also present.
+3. `rulesFile` on `plumber_scan_text`: `{ "text": "const internal = \"INT_ABCDEFGHIJ123456\";\n", "filename": "src/config.js", "rulesFile": "examples/custom-rules.example.json" }`. A snippet that does not match the pattern produces no pack finding.
+
+`src/config.js` containing `INT_ABCDEFGHIJ123456` then reports:
+
+```
+- [CRITICAL] Internal API key format (Move the internal key to an environment variable and rotate it.) — src/config.js:1
+```
+
+The secret-format rule above does not check Python files. The banned-marker rule does, because its `files` list says so.
+
 ## Links
 
 - CLI: [plumber-linter](https://www.npmjs.com/package/plumber-linter)
@@ -133,6 +199,9 @@ Tool inputs are deliberately small so they cost few tokens:
 - MCP TypeScript SDK: [github.com/modelcontextprotocol/typescript-sdk](https://github.com/modelcontextprotocol/typescript-sdk)
 
 ## Changelog
+
+## 1.2.0
+- Custom rule packs: load your own rules from `.plumber-rules.json` or a `rulesFile`, ids under `custom/`.
 
 ## 1.1.0
 - Workflow YAML rules: sec/pull-request-target, sec/expression-injection, pipe/action-unpinned, sec/job-permissions, sec/secret-to-untrusted.

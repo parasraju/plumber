@@ -566,27 +566,33 @@ test('mcp server speaks stdio and keeps the three tool schemas', async () => {
   const client = new Client({ name: 'plumber-mcp-test', version: '1.1.0' }, { capabilities: {} });
   await client.connect(transport);
   try {
-    assert.deepEqual(client.getServerVersion(), { name: 'plumber-mcp', version: '1.1.0' });
+    assert.deepEqual(client.getServerVersion(), { name: 'plumber-mcp', version: '1.2.0' });
     const listed = await client.listTools();
     assert.deepEqual(listed.tools.map((tool) => tool.name), ['plumber_scan', 'plumber_list_rules', 'plumber_scan_text']);
     assert.equal(listed.tools.length, 3);
     assert.deepEqual(listed.tools[0].inputSchema, {
       type: 'object',
       properties: {
-        target: { type: 'string', description: 'Directory or file path to scan (default ".")' }
+        target: { type: 'string', description: 'Directory or file path to scan (default ".")' },
+        rulesFile: { type: 'string', description: 'Optional path to a local JSON rule pack. When omitted, .plumber-rules.json is loaded from the scan target if that file exists.' }
       },
       additionalProperties: false
     });
+    assert.equal(listed.tools[0].inputSchema.required, undefined);
     assert.deepEqual(listed.tools[1].inputSchema, {
       type: 'object',
-      properties: {},
+      properties: {
+        rulesFile: { type: 'string', description: 'Optional path to a local JSON rule pack. Pack rules are listed after the built-in rules and marked as custom.' }
+      },
       additionalProperties: false
     });
+    assert.equal(listed.tools[1].inputSchema.required, undefined);
     assert.deepEqual(listed.tools[2].inputSchema, {
       type: 'object',
       properties: {
         text: { type: 'string', description: 'Code or config snippet to scan' },
-        filename: { type: 'string', description: 'Optional filename used to select applicable rules (e.g. app.js)' }
+        filename: { type: 'string', description: 'Optional filename used to select applicable rules (e.g. app.js)' },
+        rulesFile: { type: 'string', description: 'Optional path to a local JSON rule pack applied to this snippet. Pasted snippets do not auto-load a pack.' }
       },
       required: ['text'],
       additionalProperties: false

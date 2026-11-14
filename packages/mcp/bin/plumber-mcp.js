@@ -8,6 +8,10 @@
  *   plumber_list_rules  list every inspection rule
  *   plumber_scan_text   scan a pasted snippet
  *
+ * Each tool accepts an optional rulesFile path to one local JSON rule pack.
+ * plumber_scan also reads .plumber-rules.json in the target when rulesFile is omitted.
+ * Packs are never fetched from a URL.
+ *
  * Only JSON-RPC goes to stdout. Diagnostics go to stderr.
  */
 
@@ -21,7 +25,7 @@ const {
   ErrorCode,
   McpError
 } = require('@modelcontextprotocol/sdk/types.js');
-const { RULES, SCANNABLE_EXTS, scanLocalDirectory, scanText } = require('../src/engine.js');
+const { RULES, SCANNABLE_EXTS, scanLocalDirectory, scanText, loadRulePack, resolveScanPack } = require('../src/engine.js');
 
 // v1.0.1 fix: read the version from package.json so serverInfo never drifts.
 // Repro (v1.0.0): initialize -> serverInfo.version was hardcoded to "1.0.0".
@@ -34,7 +38,8 @@ const TOOLS = [
     inputSchema: {
       type: 'object',
       properties: {
-        target: { type: 'string', description: 'Directory or file path to scan (default ".")' }
+        target: { type: 'string', description: 'Directory or file path to scan (default ".")' },
+        rulesFile: { type: 'string', description: 'Optional path to a local JSON rule pack. When omitted, .plumber-rules.json is loaded from the scan target if that file exists.' }
       },
       additionalProperties: false
     }
@@ -44,7 +49,9 @@ const TOOLS = [
     description: 'List all Plumber inspection rules with severity, title, and recommended fix.',
     inputSchema: {
       type: 'object',
-      properties: {},
+      properties: {
+        rulesFile: { type: 'string', description: 'Optional path to a local JSON rule pack. Pack rules are listed after the built-in rules and marked as custom.' }
+      },
       additionalProperties: false
     }
   },
@@ -55,7 +62,8 @@ const TOOLS = [
       type: 'object',
       properties: {
         text: { type: 'string', description: 'Code or config snippet to scan' },
-        filename: { type: 'string', description: 'Optional filename used to select applicable rules (e.g. app.js)' }
+        filename: { type: 'string', description: 'Optional filename used to select applicable rules (e.g. app.js)' },
+        rulesFile: { type: 'string', description: 'Optional path to a local JSON rule pack applied to this snippet. Pasted snippets do not auto-load a pack.' }
       },
       required: ['text'],
       additionalProperties: false
@@ -63,22 +71,47 @@ const TOOLS = [
   }
 ];
 
+function packLoadedLine(pack) {
+  const count = Array.isArray(pack.rules) ? pack.rules.length : 0;
+  const label = count === 1 ? 'pack rule' : 'pack rules';
+  return `Pack: ${pack.path} (${count} ${label} loaded)`;
+}
+
+function formatPackBanner(pack) {
+  if (!pack) return '';
+  const lines = [packLoadedLine(pack)];
+  const errors = Array.isArray(pack.errors) ? pack.errors : [];
+  for (let i = 0; i < errors.length; i++) {
+    lines.push(`Pack error: ${errors[i]}`);
+  }
+  return lines.join('\n');
+}
+
+function formatListedRule(rule) {
+  const severity = rule.sev || rule.severity;
+  const line = `${rule.id} [${severity}] ${rule.title} (${rule.fix})`;
+  if (rule.source === 'pack') return `${line} source: pack`;
+  return line;
+}
+
 function formatReport(report) {
   const header = [
     `Plumber Health Report for ${report.repo_name}`,
     report.total_files === 0 ? 'Score: n/a' : `Score: ${report.score}/100 (Grade ${report.grade})`,
     `Files: ${report.total_files} | Issues: ${report.issues.length}`
   ].join('\n');
+  const banner = formatPackBanner(report.pack);
+  const top = banner ? `${header}\n${banner}` : header;
 
   // v1.0.1 fix: do not report "No issues found." when nothing was scanned.
   // Repro (v1.0.0): plumber_scan { target: ".github/workflows/ci.yml" } (or a
   //   Dockerfile, or an empty dir) -> "Score: 100/100 (Grade A) ... No issues found."
   if (report.total_files === 0) {
-    return `${header}\n\nNo scannable files found, so nothing was checked. Supported: ${SCANNABLE_EXTS.join(' ')} and .env* files.`;
+    return `${top}\n\nNo scannable files found, so nothing was checked. Supported: ${SCANNABLE_EXTS.join(' ')} and .env* files.`;
   }
 
   if (report.issues.length === 0) {
-    return `${header}\n\nNo issues found.`;
+    return `${top}\n\nNo issues found.`;
   }
 
   const locations = new Map();
@@ -94,7 +127,7 @@ function formatReport(report) {
     return `- [${issue.severity}] ${issue.title} (${issue.fix})${suffix}`;
   });
 
-  return `${header}\n\n${lines.join('\n')}`;
+  return `${top}\n\n${lines.join('\n')}`;
 }
 
 function requireString(value, name) {
@@ -114,15 +147,29 @@ function requireText(text) {
 
 function runScanTool(args) {
   const target = requireString(args.target, 'target') || '.';
+  const rulesFile = requireString(args.rulesFile, 'rulesFile');
   const absolute = path.resolve(target);
 
   if (!fs.existsSync(absolute)) {
     throw new McpError(ErrorCode.InvalidParams, `Target path does not exist: ${absolute}`);
   }
 
+  let pack = null;
   try {
-    return formatReport(scanLocalDirectory(absolute));
+    pack = resolveScanPack(absolute, rulesFile);
   } catch (err) {
+    pack = {
+      path: rulesFile || absolute,
+      rules: [],
+      errors: [`Pack failed to load: ${err.message}`],
+      broken: true
+    };
+  }
+
+  try {
+    return formatReport(scanLocalDirectory(absolute, pack ? { pack } : undefined));
+  } catch (err) {
+    if (err instanceof McpError) throw err;
     throw new McpError(ErrorCode.InternalError, `Scan failed: ${err.message}`);
   }
 }
@@ -130,16 +177,55 @@ function runScanTool(args) {
 function runScanTextTool(args) {
   const text = requireText(args.text);
   const filename = requireString(args.filename, 'filename');
+  const rulesFile = requireString(args.rulesFile, 'rulesFile');
+  let pack = null;
+  if (rulesFile) {
+    try {
+      pack = loadRulePack(rulesFile);
+    } catch (err) {
+      pack = {
+        path: rulesFile,
+        rules: [],
+        errors: [`Pack ${rulesFile} failed to load: ${err.message}`],
+        broken: true
+      };
+    }
+  }
 
   try {
-    return formatReport(scanText(text, filename));
+    return formatReport(scanText(text, filename, pack ? { pack } : undefined));
   } catch (err) {
+    if (err instanceof McpError) throw err;
     throw new McpError(ErrorCode.InternalError, `Scan failed: ${err.message}`);
   }
 }
 
-function runListRulesTool() {
-  return RULES.map((rule) => `${rule.id} [${rule.sev}] ${rule.title} (${rule.fix})`).join('\n');
+function runListRulesTool(args) {
+  const rulesFile = requireString(args && args.rulesFile, 'rulesFile');
+  let pack = null;
+  if (rulesFile) {
+    try {
+      pack = loadRulePack(rulesFile);
+    } catch (err) {
+      pack = {
+        path: rulesFile,
+        rules: [],
+        errors: [`Pack ${rulesFile} failed to load: ${err.message}`],
+        broken: true
+      };
+    }
+  }
+  const lines = RULES.map((rule) => formatListedRule(rule));
+  if (!pack) return lines.join('\n');
+  for (let i = 0; i < pack.rules.length; i++) {
+    lines.push(formatListedRule(pack.rules[i]));
+  }
+  lines.push(packLoadedLine(pack));
+  const errors = pack.errors || [];
+  for (let i = 0; i < errors.length; i++) {
+    lines.push(`Pack error: ${errors[i]}`);
+  }
+  return lines.join('\n');
 }
 
 async function main() {
@@ -155,7 +241,7 @@ async function main() {
     if (name === 'plumber_scan') {
       text = runScanTool(args);
     } else if (name === 'plumber_list_rules') {
-      text = runListRulesTool();
+      text = runListRulesTool(args);
     } else if (name === 'plumber_scan_text') {
       text = runScanTextTool(args);
     } else {

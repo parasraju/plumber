@@ -12,6 +12,9 @@
  * ships only `bin/` and `README.md`, so a relative import from the MCP package
  * would break `plumber-linter` for npm consumers. The CLI is intentionally left
  * untouched; keep the detection rules in this file in sync with the CLI.
+ *
+ * Rule packs (v1.2.0) are local JSON files. Their ids start with custom/
+ * and are never written into RULES, so a pack cannot replace a built-in.
  */
 
 const fs = require('fs');
@@ -54,6 +57,9 @@ const RULES = [
   { id: 'sec/secret-to-untrusted', cat: 'Leaks & Secrets', sev: 'HIGH', title: 'Secret Passed to Untrusted Step', fix: 'Scope the secret to the trusted step that needs it.' }
 ];
 
+const BUILTIN_IDS = new Set(RULES.map((rule) => rule.id));
+const PACK_SEVERITIES = new Set(['CRITICAL', 'HIGH', 'MEDIUM', 'LOW']);
+
 const SEV_WEIGHT = { CRITICAL: 4, HIGH: 3, MEDIUM: 2, LOW: 1, INFO: 0 };
 
 function gradeFor(score) {
@@ -66,7 +72,8 @@ function scoreFor(issueCount) {
 
 const SCANNABLE_EXTS = ['.py', '.js', '.jsx', '.ts', '.tsx', '.html', '.htm', '.css', '.scss', '.env'];
 
-function scanLocalDirectory(dirPath) {
+function scanLocalDirectory(dirPath, options) {
+  const pack = options && options.pack ? options.pack : null;
   const scannableExts = new Set(SCANNABLE_EXTS);
   const skipDirs = new Set(['.git', 'node_modules', 'dist', 'build', '.next', '.nuxt', 'vendor', '.venv', 'venv', '__pycache__']);
 
@@ -94,6 +101,13 @@ function scanLocalDirectory(dirPath) {
           const lines = content.split('\n');
           totalLines += lines.length;
           const fileIssues = inspectFile(rel, content, lines, ext, false);
+          if (pack) {
+            try {
+              fileIssues.push(...collectPackIssues(rel, content, lines, pack));
+            } catch (packErr) {
+              notePackError(pack, `Pack rules failed on ${rel}: ${packErr.message}`);
+            }
+          }
           if (fileIssues.length > 0) {
             issues.push(...fileIssues);
             fileReports.push({ path: rel, issues: fileIssues });
@@ -132,7 +146,7 @@ function scanLocalDirectory(dirPath) {
   const score = scoreFor(issues.length);
   const grade = gradeFor(score);
 
-  return {
+  const report = {
     repo_name: path.basename(dirPath),
     total_files: totalFiles,
     total_lines: totalLines,
@@ -141,20 +155,30 @@ function scanLocalDirectory(dirPath) {
     issues,
     file_reports: fileReports
   };
+  if (pack) report.pack = pack;
+  return report;
 }
 
-function scanText(text, filename) {
+function scanText(text, filename, options) {
   if (typeof text !== 'string') {
     throw new TypeError('text must be a string');
   }
+  const pack = options && options.pack ? options.pack : null;
   const name = filename && typeof filename === 'string' ? filename.replace(/\\/g, '/') : 'snippet.js';
   const ext = path.extname(name).toLowerCase();
   const content = text.replace(/\r\n?/g, '\n');
   const lines = content.split('\n');
   const issues = inspectFile(name, content, lines, ext, true);
+  if (pack) {
+    try {
+      issues.push(...collectPackIssues(name, content, lines, pack));
+    } catch (err) {
+      notePackError(pack, `Pack rules failed on ${name}: ${err.message}`);
+    }
+  }
   const score = scoreFor(issues.length);
 
-  return {
+  const report = {
     repo_name: name,
     total_files: 1,
     total_lines: lines.length,
@@ -163,6 +187,8 @@ function scanText(text, filename) {
     issues,
     file_reports: issues.length > 0 ? [{ path: name, issues }] : []
   };
+  if (pack) report.pack = pack;
+  return report;
 }
 
 // v1.0.1 fix: match "test"/"spec" as a path segment or filename part, not as a
@@ -774,10 +800,296 @@ function escapeRegExp(value) {
   return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+function notePackError(pack, message) {
+  if (!pack.errors) pack.errors = [];
+  if (pack.errors.indexOf(message) === -1) pack.errors.push(message);
+}
+
+function clipDetail(value) {
+  const text = String(value || '');
+  return text.length > 300 ? text.slice(0, 300) + '...' : text;
+}
+
+function ruleLabel(rule, index) {
+  if (rule && typeof rule.id === 'string' && rule.id.trim() !== '') return rule.id;
+  return 'rules[' + index + ']';
+}
+
+function globToRegExp(glob) {
+  let normalized = String(glob).replace(/\\/g, '/');
+  if (normalized.startsWith('./')) normalized = normalized.slice(2);
+  let source = '';
+  let i = 0;
+  while (i < normalized.length) {
+    const c = normalized[i];
+    if (c === '*' && normalized[i + 1] === '*') {
+      if (normalized[i + 2] === '/') {
+        source += '(?:.*/)?';
+        i += 3;
+      } else {
+        source += '.*';
+        i += 2;
+      }
+      continue;
+    }
+    if (c === '*') {
+      source += '[^/]*';
+      i += 1;
+      continue;
+    }
+    if (c === '?') {
+      source += '[^/]';
+      i += 1;
+      continue;
+    }
+    source += escapeRegExp(c);
+    i += 1;
+  }
+  return new RegExp('^' + source + '$');
+}
+
+function fileMatchesRule(relPath, rule) {
+  if (!rule.globs || rule.globs.length === 0) return true;
+  const norm = String(relPath || '').replace(/\\/g, '/');
+  for (let i = 0; i < rule.globs.length; i++) {
+    if (rule.globs[i].test(norm)) return true;
+  }
+  return false;
+}
+
+function firstNonEmptyMatch(regex, text) {
+  const flags = regex.flags.includes('g') ? regex.flags : regex.flags + 'g';
+  const re = new RegExp(regex.source, flags);
+  let match;
+  while ((match = re.exec(text)) !== null) {
+    if (match[0].length > 0) return match;
+    if (re.lastIndex <= match.index) re.lastIndex = match.index + 1;
+  }
+  return null;
+}
+
+function findPackHits(rule, content, lines) {
+  const hits = [];
+  for (let i = 0; i < lines.length; i++) {
+    const match = firstNonEmptyMatch(rule.regex, lines[i]);
+    if (!match) continue;
+    const evidence = String(lines[i] || '').trim();
+    if (!evidence) continue;
+    hits.push({ line: i + 1, evidence: evidence });
+  }
+  if (hits.length > 0) return hits;
+  const match = firstNonEmptyMatch(rule.regex, content);
+  if (!match) return hits;
+  const evidence = String(match[0]).replace(/\s+/g, ' ').trim();
+  if (!evidence) return hits;
+  const line = content.slice(0, match.index).split('\n').length;
+  hits.push({ line: line > 0 ? line : 1, evidence: evidence });
+  return hits;
+}
+
+function packIssue(rule, hit) {
+  return {
+    rule_id: rule.id,
+    title: rule.title,
+    severity: rule.severity,
+    line: hit.line > 0 ? hit.line : 1,
+    evidence: String(hit.evidence).slice(0, 90),
+    fix: rule.fix,
+    source: 'pack'
+  };
+}
+
+function collectPackIssues(relPath, content, lines, pack) {
+  if (!pack || !Array.isArray(pack.rules) || pack.rules.length === 0) return [];
+  const issues = [];
+  for (let i = 0; i < pack.rules.length; i++) {
+    const rule = pack.rules[i];
+    try {
+      if (!fileMatchesRule(relPath, rule)) continue;
+      const hits = findPackHits(rule, content, lines);
+      for (let h = 0; h < hits.length; h++) {
+        issues.push(packIssue(rule, hits[h]));
+      }
+    } catch (err) {
+      notePackError(pack, `Rejected pack rule ${rule && rule.id ? rule.id : 'rules[' + i + ']'}: pattern failed during scan (${clipDetail(err.message)})`);
+    }
+  }
+  return issues;
+}
+
+function missingPackFields(rule) {
+  const missing = [];
+  if (!rule || typeof rule.id !== 'string' || rule.id.trim() === '') missing.push('id');
+  if (!rule || typeof rule.severity !== 'string' || rule.severity.trim() === '') missing.push('severity');
+  if (!rule || typeof rule.title !== 'string' || rule.title.trim() === '') missing.push('title');
+  if (!rule || typeof rule.pattern !== 'string' || rule.pattern.trim() === '') missing.push('pattern');
+  if (!rule || typeof rule.fix !== 'string' || rule.fix.trim() === '') missing.push('fix');
+  return missing;
+}
+
+function compilePackRule(rule, index, seen) {
+  if (!rule || typeof rule !== 'object' || Array.isArray(rule)) {
+    return { error: 'Rejected pack rule rules[' + index + ']: rule must be an object with id, severity, title, pattern, and fix' };
+  }
+  const missing = missingPackFields(rule);
+  if (missing.length > 0) {
+    return { error: 'Rejected pack rule ' + ruleLabel(rule, index) + ': missing ' + missing.join(', ') };
+  }
+  if (BUILTIN_IDS.has(rule.id)) {
+    return { error: 'Rejected pack rule ' + rule.id + ': duplicate id (matches built-in rule ' + rule.id + ')' };
+  }
+  if (!rule.id.startsWith('custom/') || rule.id === 'custom/' || /\s/.test(rule.id)) {
+    return { error: 'Rejected pack rule ' + rule.id + ': id must start with custom/' };
+  }
+  if (seen.has(rule.id)) {
+    return { error: 'Rejected pack rule ' + rule.id + ': duplicate id' };
+  }
+  seen.add(rule.id);
+  if (!PACK_SEVERITIES.has(rule.severity)) {
+    return { error: 'Rejected pack rule ' + rule.id + ': unknown severity "' + clipDetail(rule.severity) + '" (expected CRITICAL, HIGH, MEDIUM, or LOW)' };
+  }
+  let regex;
+  try {
+    regex = new RegExp(rule.pattern);
+  } catch (err) {
+    return { error: 'Rejected pack rule ' + rule.id + ': bad regex (' + clipDetail(err.message) + ')' };
+  }
+  let files = null;
+  if (rule.files !== undefined) {
+    if (!Array.isArray(rule.files) || rule.files.some((item) => typeof item !== 'string' || item.trim() === '')) {
+      return { error: 'Rejected pack rule ' + rule.id + ': files must be an array of glob strings' };
+    }
+    if (rule.files.length > 0) files = rule.files.slice();
+  }
+  let globs = null;
+  if (files) {
+    try {
+      globs = files.map((item) => globToRegExp(item));
+    } catch (err) {
+      return { error: 'Rejected pack rule ' + rule.id + ': files must be an array of glob strings (' + clipDetail(err.message) + ')' };
+    }
+  }
+  return {
+    rule: {
+      id: rule.id,
+      cat: 'Custom',
+      sev: rule.severity,
+      severity: rule.severity,
+      title: rule.title,
+      pattern: rule.pattern,
+      fix: rule.fix,
+      files: files,
+      globs: globs,
+      regex: regex,
+      source: 'pack'
+    }
+  };
+}
+
+function readRulePack(filePath) {
+  const resolved = path.resolve(filePath);
+  let raw;
+  try {
+    raw = fs.readFileSync(resolved, 'utf8');
+  } catch (err) {
+    if (err && err.code === 'ENOENT') {
+      return { path: resolved, rules: [], errors: ['Pack file not found: ' + resolved], broken: true };
+    }
+    return { path: resolved, rules: [], errors: ['Pack file could not be read: ' + resolved + ' (' + err.message + ')'], broken: true };
+  }
+  let data;
+  try {
+    data = JSON.parse(String(raw).replace(/^\uFEFF/, ''));
+  } catch (err) {
+    return { path: resolved, rules: [], errors: ['Invalid JSON in ' + resolved + ': ' + clipDetail(err.message)], broken: true };
+  }
+  if (!data || typeof data !== 'object' || Array.isArray(data) || !Array.isArray(data.rules)) {
+    return { path: resolved, rules: [], errors: ['Pack ' + resolved + ' must be a JSON object with a "rules" array'], broken: true };
+  }
+  const rules = [];
+  const errors = [];
+  const seen = new Set();
+  for (let i = 0; i < data.rules.length; i++) {
+    const compiled = compilePackRule(data.rules[i], i, seen);
+    if (compiled.error) {
+      errors.push(compiled.error);
+      continue;
+    }
+    rules.push(compiled.rule);
+  }
+  return { path: resolved, rules: rules, errors: errors, broken: false };
+}
+
+function loadRulePack(filePath) {
+  if (typeof filePath !== 'string' || filePath.trim() === '') {
+    return { path: '', rules: [], errors: ['Pack file path must be a non-empty string'], broken: true };
+  }
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(filePath)) {
+    return {
+      path: filePath,
+      rules: [],
+      errors: ['Rejected pack ' + filePath + ': rule packs must be local JSON files'],
+      broken: true
+    };
+  }
+  try {
+    return readRulePack(filePath);
+  } catch (err) {
+    return {
+      path: filePath,
+      rules: [],
+      errors: ['Pack ' + filePath + ' failed to load: ' + clipDetail(err.message)],
+      broken: true
+    };
+  }
+}
+
+function resolveScanPack(targetPath, rulesFile) {
+  if (typeof rulesFile === 'string' && rulesFile.trim() !== '') {
+    return loadRulePack(rulesFile);
+  }
+  if (typeof targetPath !== 'string' || targetPath.trim() === '') return null;
+  let root = targetPath;
+  try {
+    const stat = fs.statSync(targetPath);
+    root = stat.isDirectory() ? targetPath : path.dirname(targetPath);
+  } catch (err) {
+    return {
+      path: targetPath,
+      rules: [],
+      errors: ['Pack auto-load failed for ' + targetPath + ': ' + err.message],
+      broken: true
+    };
+  }
+  const candidate = path.join(root, '.plumber-rules.json');
+  try {
+    const stat = fs.statSync(candidate);
+    if (!stat.isFile()) {
+      return {
+        path: candidate,
+        rules: [],
+        errors: ['Pack file is not a file: ' + candidate],
+        broken: true
+      };
+    }
+  } catch (err) {
+    if (err && err.code === 'ENOENT') return null;
+    return {
+      path: candidate,
+      rules: [],
+      errors: ['Pack file could not be read: ' + candidate + ' (' + err.message + ')'],
+      broken: true
+    };
+  }
+  return loadRulePack(candidate);
+}
+
 module.exports = {
   RULES,
   SEV_WEIGHT,
   SCANNABLE_EXTS,
   scanLocalDirectory,
-  scanText
+  scanText,
+  loadRulePack,
+  resolveScanPack
 };

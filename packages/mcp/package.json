@@ -1,7 +1,7 @@
 {
   "name": "@parasraju/plumber-mcp",
-  "version": "1.1.0",
-  "description": "Plumber as an MCP server — let your AI coding agent scan repos and GitHub Actions workflows for leaked secrets, dead code, and AI slop, with fixes in plain English.",
+  "version": "1.2.0",
+  "description": "Plumber as an MCP server — let your AI coding agent scan repos and GitHub Actions workflows for leaked secrets, dead code, and AI slop, with fixes in plain English. Add your own checks with custom rule packs.",
   "main": "src/engine.js",
   "bin": {
     "plumber-mcp": "bin/plumber-mcp.js"
@@ -15,6 +15,7 @@
   "files": [
     "bin",
     "src",
+    "examples",
     "README.md"
   ],
   "keywords": [
@@ -31,7 +32,9 @@
     "github-actions",
     "ci-cd",
     "workflow",
-    "yaml"
+    "yaml",
+    "custom-rules",
+    "rule-packs"
   ],
   "repository": {
     "type": "git",

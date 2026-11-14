@@ -1,0 +1,20 @@
+{
+  "rules": [
+    {
+      "id": "custom/no-internal-api-key",
+      "severity": "CRITICAL",
+      "title": "Internal API key format",
+      "pattern": "\\bINT_[A-Z0-9]{16}\\b",
+      "files": ["**/*.js", "**/*.ts"],
+      "fix": "Move the internal key to an environment variable and rotate it."
+    },
+    {
+      "id": "custom/no-banned-marker",
+      "severity": "MEDIUM",
+      "title": "Banned ship marker",
+      "pattern": "\\bDO_NOT_SHIP\\b",
+      "files": ["**/*.js", "**/*.py"],
+      "fix": "Remove the banned marker before committing this file."
+    }
+  ]
+}

@@ -35,7 +35,12 @@ const RULE_LEVELS = [
   ['sec/curl-pipe-shell', 'error'],
   ['sec/permissions-write-all', 'error'],
   ['leak/slack-webhook', 'error'],
-  ['pipe/npm-unpinned', 'warning']
+  ['pipe/npm-unpinned', 'warning'],
+  ['sec/pull-request-target', 'error'],
+  ['sec/expression-injection', 'error'],
+  ['pipe/action-unpinned', 'warning'],
+  ['sec/job-permissions', 'error'],
+  ['sec/secret-to-untrusted', 'error']
 ];
 
 function run(args) {
@@ -54,9 +59,9 @@ function scanSample(format) {
   }
 }
 
-test('rules command still lists the same 26 rules', () => {
+test('rules command lists the original 26 rules plus workflow rules', () => {
   const output = run(['rules']);
-  assert.match(output, /Plumber Inspection Rules \(26 registered\)/);
+  assert.match(output, /Plumber Inspection Rules \(31 registered\)/);
   const ids = [...output.matchAll(/\] (\S+) \(/g)].map((match) => match[1]);
   assert.deepEqual(ids, RULE_LEVELS.map(([id]) => id));
 });
@@ -77,9 +82,9 @@ test('sarif output is SARIF 2.1.0 and keeps the plain-English fix', () => {
   assert.equal(sarif.$schema, 'https://json.schemastore.org/sarif-2.1.0.json');
   assert.equal(sarif.version, '2.1.0');
   assert.equal(driver.name, 'plumber-linter');
-  assert.equal(driver.version, '1.3.0');
+  assert.equal(driver.version, '1.4.0');
   assert.equal(driver.informationUri, 'https://github.com/parasraju/plumber');
-  assert.equal(driver.rules.length, 26);
+  assert.equal(driver.rules.length, 31);
   assert.deepEqual(driver.rules.map((rule) => rule.id), RULE_LEVELS.map(([id]) => id));
 
   driver.rules.forEach((rule, index) => {
@@ -124,6 +129,6 @@ test('sarif output is SARIF 2.1.0 and keeps the plain-English fix', () => {
 test('a clean config produces SARIF with an empty results array', () => {
   const sarif = JSON.parse(run(['scan', cleanDir, '--format', 'sarif']));
   assert.equal(sarif.version, '2.1.0');
-  assert.equal(sarif.runs[0].tool.driver.rules.length, 26);
+  assert.equal(sarif.runs[0].tool.driver.rules.length, 31);
   assert.deepEqual(sarif.runs[0].results, []);
 });

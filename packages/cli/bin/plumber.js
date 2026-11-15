@@ -3,7 +3,7 @@
 /**
  * Plumber CLI & MCP Server (Node.js Thin Client)
  * Inspects repositories for leaked credentials, AI slop tells, broken pipes, and fragile joints.
- * Zero external dependencies.
+ * GitHub Actions workflow YAML is parsed with js-yaml.
  */
 
 const fs = require('fs');
@@ -11,6 +11,7 @@ const path = require('path');
 const https = require('https');
 const readline = require('readline');
 const { execFileSync } = require('child_process');
+const yaml = require('js-yaml');
 
 const API_BASE = process.env.PLUMBER_API_URL || 'http://localhost:3100';
 const HOOK_MARKER = '# plumber-managed-hook';
@@ -70,12 +71,30 @@ const RULES = [
   { id: 'sec/curl-pipe-shell', cat: 'Leaks & Secrets', sev: 'CRITICAL', title: 'Remote Script Piped Directly to Shell (curl | bash)', fix: 'Download script first, verify its SHA256 checksum or signature, then execute it.' },
   { id: 'sec/permissions-write-all', cat: 'Leaks & Secrets', sev: 'HIGH', title: 'Overly Broad Workflow Write Permissions', fix: 'Use least-privilege permissions (e.g., permissions: { contents: read }).' },
   { id: 'leak/slack-webhook', cat: 'Leaks & Secrets', sev: 'CRITICAL', title: 'Hardcoded Slack or Tokenized Webhook URL', fix: 'Move webhook URL to CI/CD encrypted secrets (e.g., ${{ secrets.SLACK_WEBHOOK_URL }}).' },
-  { id: 'pipe/npm-unpinned', cat: 'Pipes & Dependencies', sev: 'MEDIUM', title: 'Unpinned npm Install in CI Without Lockfile Enforcement', fix: 'Use npm ci to enforce lockfile versions or pass --save-exact when adding packages.' }
+  { id: 'pipe/npm-unpinned', cat: 'Pipes & Dependencies', sev: 'MEDIUM', title: 'Unpinned npm Install in CI Without Lockfile Enforcement', fix: 'Use npm ci to enforce lockfile versions or pass --save-exact when adding packages.' },
+  // v1.4.0 structural GitHub Actions checks. Same ids, severities, and fixes as the MCP engine.
+  { id: 'sec/pull-request-target', cat: 'Leaks & Secrets', sev: 'CRITICAL', title: 'Untrusted pull_request_target Checkout or Write Permission', fix: 'Use pull_request, or check out the base ref read-only with no secrets.' },
+  { id: 'sec/expression-injection', cat: 'Leaks & Secrets', sev: 'CRITICAL', title: 'Expression Injection in Workflow run Step', fix: 'Pass the value through an env: variable and reference that variable in the script.' },
+  { id: 'pipe/action-unpinned', cat: 'Pipes & Dependencies', sev: 'MEDIUM', title: 'Unpinned Third-Party Action', fix: 'Pin the action to a full commit SHA.' },
+  { id: 'sec/job-permissions', cat: 'Leaks & Secrets', sev: 'HIGH', title: 'Job Writes Without Least-Privilege Permissions', fix: 'Set least-privilege permissions on the job.' },
+  { id: 'sec/secret-to-untrusted', cat: 'Leaks & Secrets', sev: 'HIGH', title: 'Secret Passed to Untrusted Step', fix: 'Scope the secret to the trusted step that needs it.' }
 ];
 
 const SEV_WEIGHT = { CRITICAL: 4, HIGH: 3, MEDIUM: 2, LOW: 1, INFO: 0 };
 const SARIF_SCHEMA = 'https://json.schemastore.org/sarif-2.1.0.json';
 const INFORMATION_URI = 'https://github.com/parasraju/plumber';
+const FULL_SHA = /^[0-9a-f]{40}$/i;
+const FIRST_PARTY_OWNERS = new Set(['actions', 'github']);
+const INJECTED_EXPR = /\$\{\{\s*(?:github\.event\.|github\.head_ref\b|inputs\.)/;
+const SECRET_REF = /\$\{\{\s*secrets\.[A-Za-z0-9_]+\s*\}\}/;
+const UNTRUSTED_CHECKOUT = /github\.event\.pull_request|github\.head_ref|refs\/pull\//;
+const CONTENTS_WRITE_RUN = /\bgit\s+push\b|\bgh\s+release\b|\bgh\s+pr\s+merge\b/;
+const DEPLOY_RUN = /\bnpm\s+publish\b|\bpnpm\s+publish\b|\byarn\s+npm\s+publish\b|\bdocker\s+push\b|\btwine\s+upload\b/;
+const CONTENTS_ACTIONS = new Set([
+  'softprops/action-gh-release',
+  'peaceiris/actions-gh-pages',
+  'ncipollo/release-action'
+]);
 
 // Main entry
 const args = process.argv.slice(2);
@@ -106,7 +125,7 @@ if (cmd === 'mcp') {
 
 function printHelp() {
   console.log(`
-Plumber — Code Leak, Clog, and AI Slop Inspector (v1.3.0)
+Plumber — Code Leak, Clog, and AI Slop Inspector (v${readPackageVersion()})
 
 USAGE:
   npx plumber-linter scan [target] [options]
@@ -121,7 +140,7 @@ COMMANDS:
   install-hook            Block git commits that contain secrets, .env files, or dead code
   uninstall-hook          Remove the Plumber pre-commit hook
   clean [path]            Remove unreachable dead code (dry run unless --write)
-  rules                   Display catalogue of 26 inspection rules
+  rules                   Display catalogue of ${RULES.length} inspection rules
   mcp                     Run stdio Model Context Protocol (MCP) server for Claude / Cursor
 
 OPTIONS:
@@ -188,6 +207,8 @@ function scanLocalDirectory(dirPath) {
           totalLines += lines.length;
           const rel = (current === dirPath ? base : path.relative(dirPath, current)).replace(/\\/g, '/');
           const fileIssues = inspectFile(rel, content, lines, ext);
+          const workflowIssues = collectWorkflowIssues(current, rel, content, lines);
+          if (workflowIssues.length > 0) fileIssues.push(...workflowIssues);
           if (fileIssues.length > 0) {
             issues.push(...fileIssues);
             fileReports.push({ path: rel, issues: fileIssues });
@@ -416,6 +437,426 @@ function inspectFile(relPath, content, lines, ext) {
   }
 
   return issues;
+}
+
+function isGitHubWorkflowPath(filePath) {
+  return /(?:^|\/)\.github\/workflows\/[^/]+\.ya?ml$/i.test(String(filePath || '').replace(/\\/g, '/'));
+}
+
+function canonicalWorkflowPath(absPath, relPath) {
+  const rel = String(relPath || '').replace(/\\/g, '/');
+  if (isGitHubWorkflowPath(rel)) return rel;
+  const abs = String(absPath || '').replace(/\\/g, '/');
+  const marker = '.github/workflows/';
+  const idx = abs.toLowerCase().lastIndexOf(marker);
+  if (idx === -1) return rel;
+  const suffix = abs.slice(idx);
+  return isGitHubWorkflowPath(suffix) ? suffix : rel;
+}
+
+function collectWorkflowIssues(absPath, relPath, content, lines) {
+  const ext = path.extname(absPath).toLowerCase();
+  if (ext !== '.yml' && ext !== '.yaml') return [];
+  const workflowPath = canonicalWorkflowPath(absPath, relPath);
+  if (!isGitHubWorkflowPath(workflowPath)) return [];
+  try {
+    const doc = loadWorkflow(content, workflowPath);
+    if (!doc) return [];
+    return inspectWorkflow(doc, lines);
+  } catch (err) {
+    const detail = err && err.message ? err.message : String(err);
+    console.error(`[Error] Workflow scan failed for ${workflowPath}: ${detail}`);
+    return [];
+  }
+}
+
+function ruleById(id) {
+  for (let i = 0; i < RULES.length; i++) {
+    if (RULES[i].id === id) return RULES[i];
+  }
+  throw new Error('Unknown Plumber rule: ' + id);
+}
+
+function makeIssue(ruleId, line, evidence) {
+  const rule = ruleById(ruleId);
+  const text = evidence === undefined || evidence === null ? '' : String(evidence).trim();
+  return {
+    rule_id: rule.id,
+    title: rule.title,
+    severity: rule.sev,
+    line: line > 0 ? line : 1,
+    evidence: text.slice(0, 90),
+    fix: rule.fix
+  };
+}
+
+function loadWorkflow(content, workflowPath) {
+  let doc;
+  try {
+    // js-yaml 4 uses YAML 1.2, so the workflow key "on" stays a string.
+    doc = yaml.load(content, { schema: yaml.DEFAULT_SCHEMA });
+  } catch (err) {
+    const detail = err && err.message ? err.message : String(err);
+    console.error(`[Error] Failed to parse workflow YAML ${workflowPath}: ${detail}`);
+    return null;
+  }
+  if (!doc || typeof doc !== 'object' || Array.isArray(doc)) return null;
+  if (doc.on === undefined || doc.on === null) return null;
+  if (!doc.jobs || typeof doc.jobs !== 'object' || Array.isArray(doc.jobs)) return null;
+  return doc;
+}
+
+function inspectWorkflow(doc, lines) {
+  const found = [];
+  const seen = new Set();
+  function add(ruleId, line, evidence) {
+    const issue = makeIssue(ruleId, line, evidence);
+    const key = issue.rule_id + '\n' + issue.line + '\n' + issue.evidence;
+    if (seen.has(key)) return;
+    seen.add(key);
+    found.push(issue);
+  }
+  collectPullRequestTarget(doc, lines, add);
+  collectExpressionInjection(doc, lines, add);
+  collectUnpinnedActions(doc, lines, add);
+  collectJobPermissions(doc, lines, add);
+  collectSecrets(doc, lines, add);
+  return found;
+}
+
+function triggerNames(onValue) {
+  if (typeof onValue === 'string' || typeof onValue === 'number' || typeof onValue === 'boolean') {
+    return [String(onValue)];
+  }
+  if (Array.isArray(onValue)) {
+    const names = [];
+    for (let i = 0; i < onValue.length; i++) {
+      if (typeof onValue[i] === 'string') names.push(onValue[i]);
+    }
+    return names;
+  }
+  if (onValue && typeof onValue === 'object') return Object.keys(onValue);
+  return [];
+}
+
+function eachJob(doc, visit) {
+  const names = Object.keys(doc.jobs);
+  for (let i = 0; i < names.length; i++) {
+    const job = doc.jobs[names[i]];
+    if (!job || typeof job !== 'object' || Array.isArray(job)) continue;
+    visit(names[i], job);
+  }
+}
+
+function eachStep(job, visit) {
+  if (!Array.isArray(job.steps)) return;
+  for (let i = 0; i < job.steps.length; i++) {
+    const step = job.steps[i];
+    if (!step || typeof step !== 'object' || Array.isArray(step)) continue;
+    visit(step, i);
+  }
+}
+
+function scalarText(value) {
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  return '';
+}
+
+function parseActionRef(uses) {
+  if (typeof uses !== 'string') return null;
+  const spec = uses.trim();
+  if (!spec || spec.startsWith('./') || spec.startsWith('docker://')) return null;
+  const at = spec.lastIndexOf('@');
+  const name = (at === -1 ? spec : spec.slice(0, at)).trim();
+  const ref = at === -1 ? '' : spec.slice(at + 1).trim();
+  if (!name.includes('/')) return null;
+  const owner = name.split('/')[0];
+  if (!owner) return null;
+  return {
+    spec: spec,
+    name: name,
+    owner: owner,
+    ref: ref,
+    thirdParty: !FIRST_PARTY_OWNERS.has(owner),
+    pinned: FULL_SHA.test(ref)
+  };
+}
+
+function permissionsGrantWrite(perms) {
+  if (typeof perms === 'string') return perms.trim().toLowerCase() === 'write-all';
+  if (!perms || typeof perms !== 'object' || Array.isArray(perms)) return false;
+  const keys = Object.keys(perms);
+  for (let i = 0; i < keys.length; i++) {
+    if (String(perms[keys[i]]).trim().toLowerCase() === 'write') return true;
+  }
+  return false;
+}
+
+function jobEffectivePerms(doc, job) {
+  if (job && job.permissions !== undefined && job.permissions !== null) return job.permissions;
+  if (doc.permissions !== undefined && doc.permissions !== null) return doc.permissions;
+  return undefined;
+}
+
+function valueHasSecret(value, depth) {
+  if (depth > 8 || value === null || value === undefined) return false;
+  if (typeof value === 'string') return SECRET_REF.test(value);
+  if (typeof value !== 'object') return false;
+  if (Array.isArray(value)) {
+    for (let i = 0; i < value.length; i++) {
+      if (valueHasSecret(value[i], depth + 1)) return true;
+    }
+    return false;
+  }
+  const keys = Object.keys(value);
+  for (let i = 0; i < keys.length; i++) {
+    if (valueHasSecret(value[keys[i]], depth + 1)) return true;
+  }
+  return false;
+}
+
+function collectPullRequestTarget(doc, lines, add) {
+  if (triggerNames(doc.on).indexOf('pull_request_target') === -1) return;
+  let cursor = 0;
+  eachJob(doc, function (name, job) {
+    eachStep(job, function (step) {
+      if (!checkoutRefIsUntrusted(step)) return;
+      const ref = scalarText(step.with && step.with.ref);
+      const snippet = ref || scalarText(step.uses);
+      const line = lineContainingFrom(lines, snippet.slice(0, 80), cursor);
+      cursor = line;
+      add('sec/pull-request-target', line, lines[line - 1] || snippet);
+    });
+    if (permissionsGrantWrite(jobEffectivePerms(doc, job))) {
+      const line = lineOfAppliedPermissions(lines, name, jobEffectivePerms(doc, job));
+      add('sec/pull-request-target', line, lines[line - 1] || 'permissions');
+    }
+  });
+}
+
+function checkoutRefIsUntrusted(step) {
+  if (typeof step.uses !== 'string' || !/^actions\/checkout(?:@|\/|\s|$)/.test(step.uses.trim())) return false;
+  const withBlock = step.with;
+  if (!withBlock || typeof withBlock !== 'object' || Array.isArray(withBlock)) return false;
+  const ref = scalarText(withBlock.ref);
+  const repository = scalarText(withBlock.repository);
+  if (ref && UNTRUSTED_CHECKOUT.test(ref)) return true;
+  if (repository && /github\.event\.pull_request\.head/.test(repository)) return true;
+  return false;
+}
+
+function collectExpressionInjection(doc, lines, add) {
+  let cursor = 0;
+  eachJob(doc, function (name, job) {
+    eachStep(job, function (step) {
+      const run = scalarText(step.run);
+      if (!run) return;
+      const match = INJECTED_EXPR.exec(run);
+      if (!match) return;
+      const located = lineOfInjectedRun(lines, match[0], cursor);
+      cursor = located.next;
+      add('sec/expression-injection', located.line, lines[located.line - 1] || run);
+    });
+  });
+}
+
+function collectUnpinnedActions(doc, lines, add) {
+  let cursor = 0;
+  eachJob(doc, function (name, job) {
+    cursor = flagUnpinned(lines, job.uses, cursor, add);
+    eachStep(job, function (step) {
+      cursor = flagUnpinned(lines, step.uses, cursor, add);
+    });
+  });
+}
+
+function flagUnpinned(lines, uses, cursor, add) {
+  const action = parseActionRef(uses);
+  if (!action || !action.thirdParty || action.pinned) return cursor;
+  const line = lineOfUses(lines, action.spec, cursor);
+  add('pipe/action-unpinned', line, lines[line - 1] || action.spec);
+  return line;
+}
+
+function collectJobPermissions(doc, lines, add) {
+  eachJob(doc, function (name, job) {
+    const kinds = jobWriteKinds(job);
+    if (!kinds.contents && !kinds.deploy) return;
+    const hasJobPerms = job.permissions !== undefined && job.permissions !== null;
+    const hasWorkflowPerms = doc.permissions !== undefined && doc.permissions !== null;
+    const perms = hasJobPerms ? job.permissions : (hasWorkflowPerms ? doc.permissions : undefined);
+    const info = describePermissions(perms);
+    let reason = '';
+    if (!info) reason = 'missing';
+    else if (info.writeAll) reason = 'write-all';
+    else if (info.contentsWrite && kinds.deploy && !kinds.contents) reason = 'contents-write';
+    else return;
+    const line = lineForJobPermission(lines, name, reason);
+    add('sec/job-permissions', line, lines[line - 1] || name);
+  });
+}
+
+function jobWriteKinds(job) {
+  const kinds = { contents: false, deploy: false };
+  eachStep(job, function (step) {
+    const run = scalarText(step.run);
+    if (CONTENTS_WRITE_RUN.test(run)) kinds.contents = true;
+    if (DEPLOY_RUN.test(run)) kinds.deploy = true;
+    const action = parseActionRef(step.uses);
+    if (!action) return;
+    if (CONTENTS_ACTIONS.has(action.name)) kinds.contents = true;
+    if (action.name === 'actions/deploy-pages') kinds.deploy = true;
+    if (action.name === 'docker/build-push-action') {
+      const push = step.with && step.with.push;
+      if (push === true || String(push).toLowerCase() === 'true') kinds.deploy = true;
+    }
+  });
+  return kinds;
+}
+
+function describePermissions(perms) {
+  if (perms === undefined || perms === null) return null;
+  if (typeof perms === 'string') {
+    const value = perms.trim().toLowerCase();
+    return { writeAll: value === 'write-all', contentsWrite: value === 'write-all' };
+  }
+  if (typeof perms !== 'object' || Array.isArray(perms)) return null;
+  const contents = perms.contents === undefined || perms.contents === null ? '' : String(perms.contents).trim().toLowerCase();
+  return { writeAll: false, contentsWrite: contents === 'write' };
+}
+
+function collectSecrets(doc, lines, add) {
+  let cursor = 0;
+  eachJob(doc, function (name, job) {
+    const inherited = valueHasSecret(doc.env, 0) || valueHasSecret(job.env, 0);
+    const jobAction = parseActionRef(job.uses);
+    if (jobAction && jobAction.thirdParty && (job.secrets === 'inherit' || valueHasSecret(job.secrets, 0) || inherited)) {
+      const line = lineOfUses(lines, jobAction.spec, cursor);
+      cursor = line;
+      add('sec/secret-to-untrusted', line, lines[line - 1] || jobAction.spec);
+    }
+    eachStep(job, function (step) {
+      const action = parseActionRef(step.uses);
+      if (!action || !action.thirdParty) return;
+      const onStep = valueHasSecret(step.env, 0) || valueHasSecret(step.with, 0);
+      if (!onStep && !inherited) return;
+      const line = onStep
+        ? lineContainingFrom(lines, 'secrets.', cursor)
+        : lineOfUses(lines, action.spec, cursor);
+      cursor = line;
+      add('sec/secret-to-untrusted', line, lines[line - 1] || action.spec);
+    });
+  });
+}
+
+function lineContainingFrom(lines, snippet, start) {
+  const needle = String(snippet);
+  const from = start > 0 ? start : 0;
+  for (let i = from; i < lines.length; i++) {
+    if (lines[i].includes(needle)) return i + 1;
+  }
+  for (let i = 0; i < from; i++) {
+    if (lines[i].includes(needle)) return i + 1;
+  }
+  return 1;
+}
+
+function lineOfUses(lines, spec, cursor) {
+  const from = cursor > 0 ? cursor : 0;
+  for (let i = from; i < lines.length; i++) {
+    if (lines[i].includes(spec) && /uses\s*:/.test(lines[i])) return i + 1;
+  }
+  return lineContainingFrom(lines, spec, 0);
+}
+
+function lineOfInjectedRun(lines, snippet, cursor) {
+  const runKey = /^\s*(?:-\s+)?run\s*:/;
+  const start = cursor > 0 ? cursor : 0;
+  for (let i = start; i < lines.length; i++) {
+    if (!runKey.test(lines[i])) continue;
+    const indent = lines[i].search(/\S/);
+    if (lines[i].includes(snippet)) return { line: i + 1, next: i + 1 };
+    let found = 0;
+    let end = i + 1;
+    for (let j = i + 1; j < lines.length; j++) {
+      if (!lines[j].trim()) continue;
+      if (lines[j].search(/\S/) <= indent) break;
+      end = j + 1;
+      if (!found && lines[j].includes(snippet)) found = j + 1;
+    }
+    if (found) return { line: found, next: end };
+    if (/\*[A-Za-z0-9_-]+/.test(lines[i])) {
+      return { line: lineContainingFrom(lines, snippet, 0), next: i + 1 };
+    }
+  }
+  return { line: lineContainingFrom(lines, snippet, 0), next: lines.length };
+}
+
+function findJobLine(lines, jobName) {
+  const pattern = new RegExp('^  ' + escapeRegExp(jobName) + '\\s*:');
+  let seenJobs = false;
+  for (let i = 0; i < lines.length; i++) {
+    if (/^jobs\s*:/.test(lines[i])) {
+      seenJobs = true;
+      continue;
+    }
+    if (seenJobs && pattern.test(lines[i])) return i + 1;
+  }
+  return 1;
+}
+
+function nextJobBoundary(lines, jobLine) {
+  for (let i = jobLine; i < lines.length; i++) {
+    if (/^  [A-Za-z0-9_-]+\s*:/.test(lines[i])) return i;
+  }
+  return lines.length;
+}
+
+function findLineMatching(lines, pattern, start, end) {
+  const from = Math.max(0, start);
+  const to = Math.min(lines.length, end);
+  for (let i = from; i < to; i++) {
+    if (pattern.test(lines[i])) return i + 1;
+  }
+  return 0;
+}
+
+function lineOfAppliedPermissions(lines, jobName, perms) {
+  const jobAt = findJobLine(lines, jobName);
+  const regionEnd = nextJobBoundary(lines, jobAt);
+  if (typeof perms === 'string' && perms.trim().toLowerCase() === 'write-all') {
+    return findLineMatching(lines, /permissions\s*:\s*['"]?write-all['"]?/, jobAt - 1, regionEnd)
+      || findLineMatching(lines, /permissions\s*:\s*['"]?write-all['"]?/, 0, lines.length)
+      || jobAt;
+  }
+  return findLineMatching(lines, /^\s*.+:\s*['"]?write['"]?\s*(?:#.*)?$/, jobAt - 1, regionEnd)
+    || findLineMatching(lines, /^\s*permissions\s*:/, jobAt - 1, regionEnd)
+    || findLineMatching(lines, /^permissions\s*:/, 0, lines.length)
+    || jobAt;
+}
+
+function lineForJobPermission(lines, jobName, reason) {
+  const jobAt = findJobLine(lines, jobName);
+  const regionEnd = nextJobBoundary(lines, jobAt);
+  if (reason === 'write-all') {
+    return findLineMatching(lines, /permissions\s*:\s*['"]?write-all['"]?/, 0, lines.length) || jobAt;
+  }
+  if (reason === 'contents-write') {
+    return findLineMatching(lines, /contents\s*:\s*['"]?write['"]?/, jobAt - 1, regionEnd)
+      || findLineMatching(lines, /contents\s*:\s*['"]?write['"]?/, 0, lines.length)
+      || jobAt;
+  }
+  return findLineMatching(
+    lines,
+    /git\s+push|gh\s+release|gh\s+pr\s+merge|npm\s+publish|pnpm\s+publish|docker\s+push|twine\s+upload|action-gh-release|actions-gh-pages|release-action|deploy-pages|build-push-action/,
+    jobAt - 1,
+    regionEnd
+  ) || jobAt;
+}
+
+function escapeRegExp(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 function findDeadCode(content, ext) {

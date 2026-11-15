@@ -1,6 +1,6 @@
 # Plumber
 
-CI/CD pipeline linter that flags hardcoded secrets, leaked credentials, and dead code — with fixes in plain English, plus SARIF output for GitHub code scanning.
+CI/CD pipeline linter that flags hardcoded secrets, leaked credentials, and dead code — with fixes in plain English, plus SARIF output for GitHub code scanning and workflow YAML scanning for GitHub Actions.
 
 [![npm version](https://img.shields.io/npm/v/plumber-linter.svg)](https://www.npmjs.com/package/plumber-linter)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://github.com/parasraju/plumber/blob/main/LICENSE)
@@ -37,7 +37,7 @@ npx plumber-linter scan . --format md
 npx plumber-linter scan . --format json
 npx plumber-linter scan . --format sarif
 
-# View all 26 inspection rules
+# View all 31 inspection rules
 npx plumber-linter rules
 ```
 
@@ -71,7 +71,7 @@ npx plumber-linter uninstall-hook
 
 ### SARIF output for GitHub code scanning
 
-`plumber scan . --format sarif` writes SARIF 2.1.0 JSON to stdout. The file contains one run for `plumber-linter` 1.3.0, every inspection rule (id, name, description, and the plain-English fix in `help.text`), and one result per finding. Each result's `message.text` repeats that finding's explanation and fix. Paths are relative to the scanned directory, and the line is included when the engine recorded one.
+`plumber scan . --format sarif` writes SARIF 2.1.0 JSON to stdout. The file contains one run for `plumber-linter` 1.4.0, every inspection rule (id, name, description, and the plain-English fix in `help.text`), and one result per finding. Each result's `message.text` repeats that finding's explanation and fix. Paths are relative to the scanned directory, and the line is included when the engine recorded one.
 
 ```bash
 npx plumber-linter scan . --format sarif > results.sarif
@@ -99,6 +99,43 @@ jobs:
         uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: results.sarif
+```
+
+### Workflow YAML scanning — scan .github/workflows/*.yml
+
+Workflow YAML scanning checks GitHub Actions files under `.github/workflows` with the same `scan` command. Use it to scan GitHub Actions workflows for structural risks. A repository with no workflow files is unchanged: no new findings and no YAML errors.
+
+```bash
+npx plumber-linter scan .
+npx plumber-linter scan .github/workflows/review.yml
+```
+
+- `sec/pull-request-target` — flags a `pull_request_target` workflow that checks out untrusted PR code or grants write permissions (`CRITICAL`).
+- `sec/expression-injection` — flags `${{ github.event.* }}`, `${{ github.head_ref }}`, or another attacker-controlled context interpolated into a `run:` command (`CRITICAL`).
+- `pipe/action-unpinned` — flags a `uses:` step that references a third-party action by branch or version tag instead of a full commit SHA (`MEDIUM`).
+- `sec/job-permissions` — flags a job that pushes, releases, or deploys with no `permissions:` block, or with `contents: write` where a narrower scope would do (`HIGH`).
+- `sec/secret-to-untrusted` — flags a secret in `env:` or an argument of a step that runs a third-party action (`HIGH`).
+
+`.github/workflows/review.yml`:
+
+```yaml
+name: review
+on:
+  pull_request_target:
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+```
+
+```text
+  [FILE] .github/workflows/review.yml
+    L10   [CRITICAL] Untrusted pull_request_target Checkout or Write Permission
+           Found: ref: ${{ github.event.pull_request.head.sha }}
+           Fix:   Use pull_request, or check out the base ref read-only with no secrets.
 ```
 
 ---
@@ -194,3 +231,6 @@ SARIF output (`--format sarif`) for GitHub code scanning.
 - `sec/permissions-write-all`: Flag overly broad workflow write permissions (`permissions: write-all`, `contents: write`) (`HIGH`).
 - `leak/slack-webhook`: Flag hardcoded Slack and tokenized webhook URLs in workflows and code (`CRITICAL`).
 - `pipe/npm-unpinned`: Flag `npm install` in CI steps without `--save-exact` or `npm ci` lockfile enforcement (`MEDIUM`).
+
+## 1.4.0
+Workflow YAML scanning (plumber scan on .github/workflows/*.yml) — 5 workflow rules (audit-gated, see Step 1).

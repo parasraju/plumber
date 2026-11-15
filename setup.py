@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name="plumber-linter",
-    version="0.2.0",
+    version="0.2.1",
     description="Deterministic Code Leak, Clog, and AI Slop Inspector",
     author="Plumber Authors",
     packages=find_packages(),

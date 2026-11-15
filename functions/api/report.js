@@ -2,7 +2,7 @@
  * Cloudflare Pages Function: /api/report?repo=owner/repo
  */
 import { parseRepoSlug, parseTar, runInspection, exportMarkdown } from "../_shared/engine.js";
-import { renderHtmlReport } from "../_shared/reportTemplate.js";
+import { renderHtmlReport, createReportNonce, reportSecurityHeaders } from "../_shared/reportTemplate.js";
 
 export async function onRequest(context) {
   const url = new URL(context.request.url);
@@ -44,8 +44,9 @@ export async function onRequest(context) {
       });
     }
 
-    return new Response(renderHtmlReport(report), {
-      headers: { "Content-Type": "text/html; charset=utf-8" }
+    const nonce = createReportNonce();
+    return new Response(renderHtmlReport(report, nonce), {
+      headers: reportSecurityHeaders(nonce)
     });
   } catch (err) {
     return new Response(JSON.stringify({ error: err.message }), {

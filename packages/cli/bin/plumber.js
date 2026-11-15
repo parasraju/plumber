@@ -183,6 +183,17 @@ async function runScan(target, fmt, failOn) {
   renderReport(report, fmt, failOn);
 }
 
+function readEntryStat(target) {
+  try {
+    return fs.lstatSync(target);
+  } catch (err) {
+    if (err && (err.code === 'ENOENT' || err.code === 'EACCES' || err.code === 'EPERM' || err.code === 'ELOOP' || err.code === 'ENOTDIR')) {
+      return null;
+    }
+    throw err;
+  }
+}
+
 function scanLocalDirectory(dirPath) {
   const scannableExts = new Set(['.py', '.js', '.jsx', '.ts', '.tsx', '.html', '.htm', '.css', '.scss', '.env', '.yml', '.yaml', '.sh']);
   const skipDirs = new Set(['.git', 'node_modules', 'dist', 'build', '.next', '.nuxt', 'vendor', '.venv', 'venv', '__pycache__']);
@@ -193,7 +204,8 @@ function scanLocalDirectory(dirPath) {
   const fileReports = [];
 
   function walk(current) {
-    const stat = fs.statSync(current);
+    const stat = readEntryStat(current);
+    if (!stat || stat.isSymbolicLink()) return;
     if (stat.isFile()) {
       const ext = path.extname(current).toLowerCase();
       const base = path.basename(current);
@@ -1231,8 +1243,8 @@ function collectSourceFiles(target) {
   const skipDirs = new Set(['.git', 'node_modules', 'dist', 'build', '.next', '.nuxt', 'vendor', '.venv', 'venv', '__pycache__']);
 
   function walk(current) {
-    let stat;
-    try { stat = fs.statSync(current); } catch (_) { return; }
+    const stat = readEntryStat(current);
+    if (!stat || stat.isSymbolicLink()) return;
     if (stat.isFile()) { results.push(current); return; }
     if (!stat.isDirectory()) return;
     const base = path.basename(current);

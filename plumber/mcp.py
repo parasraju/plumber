@@ -199,7 +199,7 @@ def run_mcp_server():
                     },
                     "serverInfo": {
                         "name": "plumber-mcp",
-                        "version": "0.2.0"
+                        "version": "0.2.1"
                     }
                 }
             }

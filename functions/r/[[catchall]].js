@@ -2,7 +2,7 @@
  * Cloudflare Pages Function: /r/:owner/:repo
  */
 import { parseRepoSlug, parseTar, runInspection, exportMarkdown } from "../_shared/engine.js";
-import { renderHtmlReport } from "../_shared/reportTemplate.js";
+import { renderHtmlReport, createReportNonce, reportSecurityHeaders } from "../_shared/reportTemplate.js";
 
 // In-memory cache in worker runtime
 const cache = new Map();
@@ -99,13 +99,9 @@ a{color:#111;text-decoration:underline;}
       });
     }
 
-    const html = renderHtmlReport(report);
-    return new Response(html, {
-      headers: {
-        "Content-Type": "text/html; charset=utf-8",
-        "Cache-Control": "public, max-age=600"
-      }
-    });
+    const nonce = createReportNonce();
+    const html = renderHtmlReport(report, nonce);
+    return new Response(html, { headers: reportSecurityHeaders(nonce) });
 
   } catch (err) {
     return new Response(`Inspection error: ${err.message}`, {

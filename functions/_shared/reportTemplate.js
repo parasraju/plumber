@@ -13,12 +13,68 @@ function escapeHtml(str) {
   }[c]));
 }
 
-export function renderHtmlReport(report) {
+const NONCE_RE = /^[0-9a-f]{16,64}$/i;
+
+export function escapeJsonForHtmlScript(value) {
+  return JSON.stringify(value)
+    .replace(/&/g, "\\u0026")
+    .replace(/</g, "\\u003c")
+    .replace(/>/g, "\\u003e")
+    .replace(/\u2028/g, "\\u2028")
+    .replace(/\u2029/g, "\\u2029");
+}
+
+export function createReportNonce() {
+  const bytes = new Uint8Array(16);
+  crypto.getRandomValues(bytes);
+  let hex = "";
+  for (const byte of bytes) hex += byte.toString(16).padStart(2, "0");
+  return hex;
+}
+
+export function contentSecurityPolicy(nonce) {
+  if (!NONCE_RE.test(nonce || "")) {
+    throw new Error("CSP nonce must be a hex string");
+  }
+  return [
+    "default-src 'self'",
+    `script-src 'nonce-${nonce}'`,
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+    "font-src 'self' https://fonts.gstatic.com",
+    "img-src 'self' data:",
+    "connect-src 'self'",
+    "object-src 'none'",
+    "base-uri 'self'",
+    "frame-ancestors 'none'",
+    "form-action 'self'"
+  ].join("; ");
+}
+
+export function reportSecurityHeaders(nonce) {
+  return {
+    "Content-Type": "text/html; charset=utf-8",
+    "Cache-Control": "public, max-age=600",
+    "Content-Security-Policy": contentSecurityPolicy(nonce),
+    "X-Content-Type-Options": "nosniff",
+    "Referrer-Policy": "strict-origin-when-cross-origin",
+    "X-Frame-Options": "DENY"
+  };
+}
+
+export function renderHtmlReport(report, nonce) {
+  if (!NONCE_RE.test(nonce || "")) {
+    throw new Error("A hex CSP nonce is required to render the report.");
+  }
   const slug = report.owner ? `${report.owner}/${report.repo_name}` : report.repo_name;
   const escSlug = escapeHtml(slug);
+  const escGrade = escapeHtml(report.grade);
   const badgeColor = GRADE_COLORS[report.grade] || "#067647";
   const badgeBg = `${badgeColor}18`;
-  const reportJson = JSON.stringify(report);
+  const reportJson = escapeJsonForHtmlScript(report);
+  const fileCount = Number.isFinite(Number(report.total_files)) ? Number(report.total_files) : 0;
+  const lineCount = Number.isFinite(Number(report.total_lines)) ? Number(report.total_lines) : 0;
+  const durationText = Number.isFinite(Number(report.duration_seconds)) ? String(report.duration_seconds) : "0";
+  const scoreText = Number.isFinite(Number(report.score)) ? Number(report.score).toFixed(1) : "0.0";
 
   return `<!DOCTYPE html>
 <html lang="en" data-theme="light">
@@ -31,7 +87,6 @@ export function renderHtmlReport(report) {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="prefetch" href="/night_sky_bg_v2.webp" as="image">
   <style>
     :root {
       --bg: #F4F3EF;
@@ -204,28 +259,21 @@ export function renderHtmlReport(report) {
     .score-denom { font-family: var(--font-mono); font-size: 13px; color: var(--muted); }
     .metric-label { font-family: var(--font-mono); font-size: 11px; color: var(--muted); text-transform: uppercase; }
 
-    /* Sky Zone with Curved Side Edges */
     .report-sky-zone {
       position: relative;
       margin: 0 clamp(12px, 2.5vw, 32px) 32px;
       border-radius: 20px;
       overflow: hidden;
       border: 1px solid var(--border);
-      box-shadow: 0 16px 40px rgba(0, 20, 60, 0.12);
-      background-color: #2b77d9;
-      background-image: image-set(url("/sky_bg.webp") type("image/webp"), url("/sky_bg.jpg") type("image/jpeg"));
-      background-size: cover;
-      background-position: center top;
-      background-attachment: fixed;
+      background-color: var(--bg);
+      background-image: none;
       padding: 32px 0 80px;
       min-height: 75vh;
     }
     [data-theme="dark"] .report-sky-zone {
-      border-color: rgba(255, 255, 255, 0.12);
-      box-shadow: 0 16px 40px rgba(0, 0, 0, 0.35);
-      background-color: #070b14 !important;
-      background-image: url("/night_sky_bg_v2.jpg") !important;
-      background-image: image-set(url("/night_sky_bg_v2.webp") type("image/webp"), url("/night_sky_bg_v2.jpg") type("image/jpeg")) !important;
+      border-color: var(--border);
+      background-color: var(--bg);
+      background-image: none;
     }
     @media (max-width: 640px) {
       .report-sky-zone {
@@ -633,7 +681,7 @@ export function renderHtmlReport(report) {
         </a>
         <span class="brand-sep">/</span>
         <a href="https://github.com/${escSlug}" target="_blank" rel="noopener" class="repo-link">${escSlug}</a>
-        <span class="meta-text">&middot; ${report.total_files} files &middot; ${report.total_lines.toLocaleString()} lines &middot; ${report.duration_seconds}s</span>
+        <span class="meta-text">&middot; ${fileCount} files &middot; ${lineCount.toLocaleString()} lines &middot; ${durationText}s</span>
       </div>
       <div class="top-actions">
         <button class="btn-utility" type="button" id="copyBadgeBtn">Copy Badge</button>
@@ -651,14 +699,14 @@ export function renderHtmlReport(report) {
       </div>
       <div class="score-card-pill">
         <div class="score-badge-circle" style="background:${badgeBg}; border-color:${badgeColor}; color:${badgeColor};">
-          ${report.grade}
+          ${escGrade}
         </div>
         <div>
           <div class="metric-score">
-            <span class="score-num">${report.score.toFixed(1)}</span>
+            <span class="score-num">${scoreText}</span>
             <span class="score-denom">/ 100</span>
           </div>
-          <div class="metric-label">Health Score &middot; Grade ${report.grade}</div>
+          <div class="metric-label">Health Score &middot; Grade ${escGrade}</div>
         </div>
       </div>
     </header>
@@ -715,7 +763,7 @@ export function renderHtmlReport(report) {
       <div style="display:flex; gap:12px; align-items:center;">
         <a href="/" class="btn-utility">Home</a>
         <a href="https://github.com/${escSlug}" target="_blank" rel="noopener" class="btn-utility">GitHub Repo</a>
-        <button class="btn-utility" type="button" onclick="window.scrollTo({top:0, behavior:'smooth'})">Back to Top &uarr;</button>
+        <button class="btn-utility" type="button" id="backToTopBtn">Back to Top &uarr;</button>
       </div>
     </div>
   </div>
@@ -723,7 +771,7 @@ export function renderHtmlReport(report) {
   <div class="toast" id="toast"></div>
 
   <script id="data" type="application/json">${reportJson}</script>
-  <script>
+  <script nonce="${nonce}">
     (() => {
       const data = JSON.parse(document.getElementById("data").textContent);
       const SEVS = ["CRITICAL", "HIGH", "MEDIUM", "LOW", "INFO"];
@@ -741,6 +789,10 @@ export function renderHtmlReport(report) {
         document.documentElement.setAttribute("data-theme", next);
         localStorage.setItem("plumber-theme", next);
         if (themeBtnText) themeBtnText.textContent = next === "light" ? "Dark Mode" : "Light Mode";
+      });
+
+      $("backToTopBtn")?.addEventListener("click", () => {
+        window.scrollTo({ top: 0, behavior: "smooth" });
       });
 
       let toastTimer;
@@ -769,8 +821,11 @@ export function renderHtmlReport(report) {
           const chip = document.createElement("button");
           chip.type = "button";
           chip.className = "sev-chip active";
-          chip.innerHTML = \`<span class="dot sev-\${s}"></span>\${s} &middot; \${count}\`;
-          chip.onclick = () => {
+          const dot = document.createElement("span");
+          dot.className = "dot sev-" + s;
+          chip.appendChild(dot);
+          chip.appendChild(document.createTextNode(s + " · " + count));
+          chip.addEventListener("click", () => {
             if (activeSevs.has(s)) {
               activeSevs.delete(s);
               chip.classList.remove("active");
@@ -779,7 +834,7 @@ export function renderHtmlReport(report) {
               chip.classList.add("active");
             }
             render();
-          };
+          });
           chipsEl.appendChild(chip);
         }
       });
@@ -796,8 +851,24 @@ export function renderHtmlReport(report) {
       catEl.onchange = render;
       $("searchFilter").oninput = render;
 
-      function escapeText(str) {
-        return String(str || "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+      function el(tag, className, text) {
+        const node = document.createElement(tag);
+        if (className) node.className = className;
+        if (text != null) node.textContent = text;
+        return node;
+      }
+
+      function fillCleanState(list, title, message, withMark) {
+        list.replaceChildren();
+        const wrap = el("div", "clean-state");
+        if (withMark) {
+          const mark = el("div", "", "✓");
+          mark.style.cssText = "width:56px; height:56px; border-radius:50%; background:rgba(6,118,71,0.12); display:inline-flex; align-items:center; justify-content:center; margin-bottom:14px; border:2px solid #067647; color:#067647; font-size:24px; font-weight:800;";
+          wrap.appendChild(mark);
+        }
+        wrap.appendChild(el("h3", "", title));
+        wrap.appendChild(el("p", "", message));
+        list.appendChild(wrap);
       }
 
       function filterIssues(issues, path) {
@@ -820,20 +891,15 @@ export function renderHtmlReport(report) {
         const list = $("findingsList");
 
         if (!data.files || data.files.length === 0) {
-          list.innerHTML = \`
-            <div class="clean-state">
-              <div style="width:56px; height:56px; border-radius:50%; background:rgba(6,118,71,0.12); display:inline-flex; align-items:center; justify-content:center; margin-bottom:14px; border:2px solid #067647; color:#067647; font-size:24px; font-weight:800;">✓</div>
-              <h3>Pristine Codebase</h3>
-              <p>No leaks, clogs, or AI slop detected! Repository achieved Grade A (\${data.score.toFixed(1)} / 100).</p>
-            </div>
-          \`;
-          if (sidebarList) sidebarList.innerHTML = "";
+          const scoreLabel = Number.isFinite(Number(data.score)) ? Number(data.score).toFixed(1) : "0.0";
+          fillCleanState(list, "Pristine Codebase", "No leaks, clogs, or AI slop detected! Repository achieved Grade A (" + scoreLabel + " / 100).", true);
+          if (sidebarList) sidebarList.replaceChildren();
           if (countBadge) countBadge.textContent = "0";
           return;
         }
 
-        sidebarList.innerHTML = "";
-        list.innerHTML = "";
+        sidebarList.replaceChildren();
+        list.replaceChildren();
         let visibleFiles = 0;
         let visibleIssues = 0;
 
@@ -842,51 +908,74 @@ export function renderHtmlReport(report) {
           if (matched.length === 0) return;
           visibleFiles++;
           visibleIssues += matched.length;
+          const filePath = String(file.path || "");
 
           const navItem = document.createElement("a");
-          navItem.className = \`file-item\${visibleFiles === 1 ? " active" : ""}\`;
-          navItem.href = \`#f-\${idx}\`;
-          const baseName = file.path.split("/").pop();
-          navItem.innerHTML = \`<span class="file-name" title="\${escapeText(file.path)}">\${escapeText(baseName)}</span><span class="count-badge">\${matched.length}</span>\`;
-          navItem.onclick = () => {
-            document.querySelectorAll(".file-item").forEach(el => el.classList.remove("active"));
+          navItem.className = visibleFiles === 1 ? "file-item active" : "file-item";
+          navItem.href = "#f-" + idx;
+          const baseName = filePath.split("/").pop();
+          const nameEl = el("span", "file-name", baseName);
+          nameEl.title = filePath;
+          navItem.appendChild(nameEl);
+          navItem.appendChild(el("span", "count-badge", String(matched.length)));
+          navItem.addEventListener("click", () => {
+            document.querySelectorAll(".file-item").forEach((item) => item.classList.remove("active"));
             navItem.classList.add("active");
-          };
+          });
           sidebarList.appendChild(navItem);
 
           const card = document.createElement("article");
           card.className = "file-card";
-          card.id = \`f-\${idx}\`;
+          card.id = "f-" + idx;
 
-          const header = document.createElement("div");
-          header.className = "file-card-header";
-          header.innerHTML = \`
-            <div style="display:flex; align-items:center; gap:8px; min-width:0; flex:1 1 auto;">
-              <div class="window-dots-mini" style="flex-shrink:0;">
-                <span class="window-dot-mini close"></span>
-                <span class="window-dot-mini min"></span>
-                <span class="window-dot-mini max"></span>
-              </div>
-              <span class="file-path-title" title="\${escapeText(file.path)}">\${escapeText(file.path)}</span>
-            </div>
-            <button class="btn-utility" type="button" data-copy-idx="\${idx}">Copy Fix</button>
-          \`;
+          const header = el("div", "file-card-header");
+          const titleWrap = el("div");
+          titleWrap.style.cssText = "display:flex; align-items:center; gap:8px; min-width:0; flex:1 1 auto;";
+          const dots = el("div", "window-dots-mini");
+          dots.style.flexShrink = "0";
+          dots.appendChild(el("span", "window-dot-mini close"));
+          dots.appendChild(el("span", "window-dot-mini min"));
+          dots.appendChild(el("span", "window-dot-mini max"));
+          titleWrap.appendChild(dots);
+          const pathEl = el("span", "file-path-title", filePath);
+          pathEl.title = filePath;
+          titleWrap.appendChild(pathEl);
+          header.appendChild(titleWrap);
+
+          const copyBtn = el("button", "btn-utility", "Copy Fix");
+          copyBtn.type = "button";
+          copyBtn.addEventListener("click", () => {
+            let prompt = "# Fix issues in " + filePath + "\\n";
+            (file.issues || []).forEach((issue) => {
+              prompt += "- L" + issue.line + " [" + issue.severity + "] " + issue.title + " (" + issue.rule_id + "): " + issue.fix + "\\n";
+            });
+            navigator.clipboard.writeText(prompt).then(() => showToast("Fix prompt for " + filePath + " copied!"));
+          });
+          header.appendChild(copyBtn);
           card.appendChild(header);
 
           const body = document.createElement("div");
-          matched.forEach(i => {
-            const item = document.createElement("div");
-            item.className = "issue-item";
-            item.innerHTML = \`
-              <div class="issue-meta-row">
-                <span class="line-badge">L\${i.line}</span>
-                <span class="sev-badge sev-\${i.severity}">\${i.severity}</span>
-                <span class="issue-title">\${escapeText(i.title)}</span>
-                <span class="rule-id">\${escapeText(i.rule_id)}</span>
-              </div>
-              \${i.evidence ? \`<pre class="issue-code"><code>\${escapeText(i.evidence)}</code></pre>\` : ""}
-              \${i.fix ? \`<div class="issue-fix"><strong>Suggested Fix:</strong> \${escapeText(i.fix)}</div>\` : ""}
-            \`;
+          matched.forEach((issue) => {
+            const item = el("div", "issue-item");
+            const meta = el("div", "issue-meta-row");
+            const lineText = Number.isFinite(Number(issue.line)) ? String(issue.line) : "?";
+            meta.appendChild(el("span", "line-badge", "L" + lineText));
+            const knownSev = SEVS.indexOf(issue.severity) !== -1;
+            meta.appendChild(el("span", knownSev ? "sev-badge sev-" + issue.severity : "sev-badge", knownSev ? issue.severity : String(issue.severity || "")));
+            meta.appendChild(el("span", "issue-title", issue.title));
+            meta.appendChild(el("span", "rule-id", issue.rule_id));
+            item.appendChild(meta);
+            if (issue.evidence) {
+              const pre = el("pre", "issue-code");
+              pre.appendChild(el("code", "", issue.evidence));
+              item.appendChild(pre);
+            }
+            if (issue.fix) {
+              const fix = el("div", "issue-fix");
+              fix.appendChild(el("strong", "", "Suggested Fix: "));
+              fix.appendChild(document.createTextNode(issue.fix));
+              item.appendChild(fix);
+            }
             body.appendChild(item);
           });
           card.appendChild(body);
@@ -896,24 +985,8 @@ export function renderHtmlReport(report) {
         if (countBadge) countBadge.textContent = String(visibleFiles);
 
         if (visibleIssues === 0) {
-          list.innerHTML = \`
-            <div class="clean-state">
-              <h3>No Matching Findings</h3>
-              <p>Try clearing your search query or enabling more severity filters.</p>
-            </div>
-          \`;
+          fillCleanState(list, "No Matching Findings", "Try clearing your search query or enabling more severity filters.", false);
         }
-
-        list.querySelectorAll("[data-copy-idx]").forEach(btn => {
-          btn.onclick = () => {
-            const f = data.files[btn.dataset.copyIdx];
-            let prompt = \`# Fix issues in \${f.path}\\n\`;
-            f.issues.forEach(i => {
-              prompt += \`- L\${i.line} [\${i.severity}] \${i.title} (\${i.rule_id}): \${i.fix}\\n\`;
-            });
-            navigator.clipboard.writeText(prompt).then(() => showToast(\`Fix prompt for \${f.path} copied!\`));
-          };
-        });
       }
 
       $("exportSelect").onchange = (e) => {

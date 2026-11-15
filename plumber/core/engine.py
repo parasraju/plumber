@@ -2,6 +2,7 @@
 Plumber core inspection engine.
 """
 import os
+import stat
 import time
 from pathlib import Path
 from typing import List, Dict, Optional, Tuple
@@ -127,8 +128,19 @@ class PlumberEngine:
 
         file_items: List[Tuple[str, str]] = []
 
-        for root, dirs, files in os.walk(root_dir):
-            dirs[:] = [d for d in dirs if d not in SKIP_DIRS and not d.startswith(".")]
+        for root, dirs, files in os.walk(root_dir, followlinks=False):
+            kept_dirs = []
+            for name in dirs:
+                if name in SKIP_DIRS or name.startswith("."):
+                    continue
+                child = Path(root) / name
+                try:
+                    if child.is_symlink():
+                        continue
+                except OSError:
+                    continue
+                kept_dirs.append(name)
+            dirs[:] = kept_dirs
 
             for file in files:
                 file_path = Path(root) / file
@@ -139,12 +151,17 @@ class PlumberEngine:
                 if ext not in SCANNABLE_EXTS and not file.startswith(".env"):
                     continue
 
-                # Skip files larger than 1.5MB
                 try:
-                    if file_path.stat().st_size > 1.5 * 1024 * 1024:
-                        continue
+                    info = os.lstat(file_path)
+                except OSError:
+                    continue
+                if stat.S_ISLNK(info.st_mode):
+                    continue
+                if info.st_size > 1.5 * 1024 * 1024:
+                    continue
+                try:
                     content = file_path.read_text(encoding="utf-8", errors="ignore")
-                except Exception:
+                except OSError:
                     continue
 
                 try:

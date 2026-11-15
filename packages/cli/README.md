@@ -71,7 +71,7 @@ npx plumber-linter uninstall-hook
 
 ### SARIF output for GitHub code scanning
 
-`plumber scan . --format sarif` writes SARIF 2.1.0 JSON to stdout. The file contains one run for `plumber-linter` 1.4.0, every inspection rule (id, name, description, and the plain-English fix in `help.text`), and one result per finding. Each result's `message.text` repeats that finding's explanation and fix. Paths are relative to the scanned directory, and the line is included when the engine recorded one.
+`plumber scan . --format sarif` writes SARIF 2.1.0 JSON to stdout. The file contains one run for `plumber-linter` 1.4.1, every inspection rule (id, name, description, and the plain-English fix in `help.text`), and one result per finding. Each result's `message.text` repeats that finding's explanation and fix. Paths are relative to the scanned directory, and the line is included when the engine recorded one.
 
 ```bash
 npx plumber-linter scan . --format sarif > results.sarif
@@ -222,6 +222,12 @@ Spots hallucinated library imports invented by LLMs or packages missing from pro
 
 ## Changelog
 
+## 1.4.1
+`plumber scan` skips symlinks, including dangling links such as a `README.md` that points at a missing file, instead of crashing.
+
+## 1.4.0
+Workflow YAML scanning (plumber scan on .github/workflows/*.yml) — 5 workflow rules (audit-gated, see Step 1).
+
 ## 1.3.0
 SARIF output (`--format sarif`) for GitHub code scanning.
 
@@ -231,6 +237,3 @@ SARIF output (`--format sarif`) for GitHub code scanning.
 - `sec/permissions-write-all`: Flag overly broad workflow write permissions (`permissions: write-all`, `contents: write`) (`HIGH`).
 - `leak/slack-webhook`: Flag hardcoded Slack and tokenized webhook URLs in workflows and code (`CRITICAL`).
 - `pipe/npm-unpinned`: Flag `npm install` in CI steps without `--save-exact` or `npm ci` lockfile enforcement (`MEDIUM`).
-
-## 1.4.0
-Workflow YAML scanning (plumber scan on .github/workflows/*.yml) — 5 workflow rules (audit-gated, see Step 1).

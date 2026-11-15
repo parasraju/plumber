@@ -4,6 +4,7 @@ Vercel serverless function: GET /r/:owner/:repo -> HTML report or export.
 import sys
 import json
 import html
+import secrets
 from pathlib import Path
 from http.server import BaseHTTPRequestHandler
 from urllib.parse import parse_qs, urlparse
@@ -13,7 +14,7 @@ if str(root_dir) not in sys.path:
     sys.path.insert(0, str(root_dir))
 
 from plumber.core.fetcher import parse_repo_slug, scan_github_repo, FetchError
-from plumber.core.html_report import render_html_report
+from plumber.core.html_report import render_html_report, content_security_policy
 from plumber.core.badges import export_markdown, export_json, export_csv
 
 HEADERS_BASE = {
@@ -32,8 +33,10 @@ def get_report_response(query: dict):
         owner, repo = parse_repo_slug(repo_param)
         report = scan_github_repo(owner, repo)
 
+        nonce = None
         if fmt == "html":
-            body = render_html_report(report).encode("utf-8")
+            nonce = secrets.token_hex(16)
+            body = render_html_report(report, nonce).encode("utf-8")
             content_type = "text/html; charset=utf-8"
             disp = "inline"
         elif fmt == "md":
@@ -57,6 +60,8 @@ def get_report_response(query: dict):
             "Content-Disposition": disp,
             "Cache-Control": "public, max-age=0, s-maxage=3600, stale-while-revalidate=86400"
         }
+        if nonce:
+            headers["Content-Security-Policy"] = content_security_policy(nonce)
         return 200, headers, body
 
     except FetchError as err:

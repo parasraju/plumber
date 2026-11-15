@@ -245,13 +245,34 @@ def run_hook(start: Optional[Path] = None, fail_on: str = "high") -> int:
 
 
 def _iter_source_files(target: Path):
+    try:
+        if target.is_symlink():
+            return
+    except OSError:
+        return
     if target.is_file():
         yield target
         return
-    for root, dirs, files in os.walk(target):
-        dirs[:] = [d for d in dirs if d not in SKIP_DIRS and not d.startswith(".")]
+    for root, dirs, files in os.walk(target, followlinks=False):
+        kept_dirs = []
+        for name in dirs:
+            if name in SKIP_DIRS or name.startswith("."):
+                continue
+            child = Path(root) / name
+            try:
+                if child.is_symlink():
+                    continue
+            except OSError:
+                continue
+            kept_dirs.append(name)
+        dirs[:] = kept_dirs
         for name in files:
             path = Path(root) / name
+            try:
+                if path.is_symlink():
+                    continue
+            except OSError:
+                continue
             ext = path.suffix.lower()
             if ext in SCANNABLE_EXTS or _is_env_file(name):
                 yield path

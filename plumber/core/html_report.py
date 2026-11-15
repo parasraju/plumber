@@ -3,16 +3,56 @@ Interactive HTML report generator for Plumber — Code Hygiene & Slop Inspector.
 """
 import html
 import json
+import re
+import secrets
+from typing import Optional
+
 from plumber.core.models import ScanReport
 from plumber.core.scoring import GRADE_COLORS
 
+_NONCE_RE = re.compile(r"^[0-9a-fA-F]{16,64}$")
 
-def render_html_report(report: ScanReport) -> str:
+
+def escape_json_for_script(value: object) -> str:
+    """Serialize JSON for a <script> block without leaving HTML-special characters."""
+    text = json.dumps(value, ensure_ascii=False)
+    return (
+        text.replace("&", "\\u0026")
+        .replace("<", "\\u003c")
+        .replace(">", "\\u003e")
+        .replace("\u2028", "\\u2028")
+        .replace("\u2029", "\\u2029")
+    )
+
+
+def content_security_policy(nonce: str) -> str:
+    if not _NONCE_RE.fullmatch(nonce or ""):
+        raise ValueError("CSP nonce must be a hex string")
+    return (
+        "default-src 'self'; "
+        f"script-src 'nonce-{nonce}'; "
+        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+        "font-src 'self' https://fonts.gstatic.com; "
+        "img-src 'self' data:; "
+        "connect-src 'self'; "
+        "object-src 'none'; "
+        "base-uri 'self'; "
+        "frame-ancestors 'none'; "
+        "form-action 'self'"
+    )
+
+
+def render_html_report(report: ScanReport, nonce: Optional[str] = None) -> str:
+    if nonce is None:
+        nonce = secrets.token_hex(16)
+    elif not _NONCE_RE.fullmatch(nonce):
+        raise ValueError("CSP nonce must be a hex string")
     slug = f"{report.owner}/{report.repo_name}" if report.owner else report.repo_name
     esc_slug = html.escape(slug)
+    esc_grade = html.escape(report.grade)
     badge_color = GRADE_COLORS.get(report.grade, "#2B7A4B")
     badge_bg = f"{badge_color}18"
-    report_json = json.dumps(report.to_dict())
+    report_json = escape_json_for_script(report.to_dict())
 
     commit_link = (
         f'<a href="https://github.com/{esc_slug}/tree/{report.commit}" target="_blank" rel="noopener" class="commit-link">{report.commit[:7]}</a>'
@@ -869,72 +909,22 @@ def render_html_report(report: ScanReport) -> str:
       opacity: 1;
     }}
 
-    /* ==========================================================================
-       Zone 2: Atmospheric Sky Zone with Viewport-Fixed Clouds & Smooth Fades
-       ========================================================================== */
     .report-sky-zone {{
       position: relative;
       margin: 0 clamp(12px, 2.5vw, 32px) 32px;
       border-radius: 20px;
       overflow: hidden;
       border: 1px solid var(--border);
-      box-shadow: 0 16px 40px rgba(0, 20, 60, 0.12);
-      background-color: #2b77d9;
-      background-image:
-        image-set(
-          url("/sky_bg.webp") type("image/webp"),
-          url("/sky_bg.jpg") type("image/jpeg")
-        );
-      background-size: cover;
-      background-position: center top;
-      background-attachment: fixed;
-      background-repeat: no-repeat;
+      background-color: var(--bg);
+      background-image: none;
       padding: 32px 0 80px;
       min-height: 85vh;
     }}
 
-    /* Framer-Style Top Fade Transition (Hero Clean Canvas -> Sky) */
-    .report-sky-zone::before {{
-      content: "";
-      position: absolute;
-      top: 0;
-      left: 0;
-      right: 0;
-      height: 50px;
-      background: linear-gradient(to bottom, var(--bg) 0%, rgba(244, 243, 239, 0) 100%);
-      pointer-events: none;
-      z-index: 5;
-    }}
-
-    /* Framer-Style Bottom Fade Transition (Sky -> Solid Plain Section) */
-    .report-sky-zone::after {{
-      content: "";
-      position: absolute;
-      bottom: 0;
-      left: 0;
-      right: 0;
-      height: 80px;
-      background: linear-gradient(to bottom, rgba(244, 243, 239, 0) 0%, var(--surface-plain, #F4F3EF) 100%);
-      pointer-events: none;
-      z-index: 5;
-    }}
-
-    [data-theme="dark"] .report-sky-zone::before {{
-      background: linear-gradient(to bottom, var(--bg) 0%, rgba(20, 20, 22, 0) 100%);
-    }}
-
-    [data-theme="dark"] .report-sky-zone::after {{
-      background: linear-gradient(to bottom, rgba(20, 20, 22, 0) 0%, #141416 100%);
-    }}
-
     [data-theme="dark"] .report-sky-zone {{
-      background-color: #070b14 !important;
-      background-image: url("/night_sky_bg_v2.jpg") !important;
-      background-image:
-        image-set(
-          url("/night_sky_bg_v2.webp") type("image/webp"),
-          url("/night_sky_bg_v2.jpg") type("image/jpeg")
-        ) !important;
+      background-color: var(--bg);
+      background-image: none;
+      border-color: var(--border);
     }}
 
     /* Floating Frosted Pill Toolbar in Sky Zone */
@@ -1224,7 +1214,7 @@ def render_html_report(report: ScanReport) -> str:
         <div class="report-header-right">
           <div class="score-card-pill">
             <div class="score-badge-circle" style="background:{badge_bg}; border-color:{badge_color}; color:{badge_color};" aria-hidden="true">
-              {report.grade}
+              {esc_grade}
             </div>
             <div>
               <div class="metric-score">
@@ -1232,7 +1222,7 @@ def render_html_report(report: ScanReport) -> str:
                 <span class="score-denom">/ 100</span>
               </div>
               <div class="metric-label">
-                HEALTH SCORE &middot; <span class="grade-tag grade-{report.grade}">GRADE {report.grade}</span>
+                HEALTH SCORE &middot; <span class="grade-tag grade-{esc_grade}">GRADE {esc_grade}</span>
               </div>
             </div>
           </div>
@@ -1301,7 +1291,7 @@ def render_html_report(report: ScanReport) -> str:
       <div style="display:flex; gap:16px; align-items:center;">
         <a href="/" class="btn-utility">Home</a>
         <a href="https://github.com/{esc_slug}" target="_blank" rel="noopener" class="btn-utility">GitHub Repo</a>
-        <button class="btn-utility" type="button" onclick="window.scrollTo({{top:0, behavior:'smooth'}})">Back to Top &uarr;</button>
+        <button class="btn-utility" type="button" id="backToTopBtn">Back to Top &uarr;</button>
       </div>
     </div>
   </div>
@@ -1309,7 +1299,7 @@ def render_html_report(report: ScanReport) -> str:
   <div class="toast" id="toast"></div>
 
   <script id="data" type="application/json">{report_json}</script>
-  <script>
+  <script nonce="{nonce}">
     (() => {{
       const data = JSON.parse(document.getElementById("data").textContent);
       const SEVS = ["CRITICAL", "HIGH", "MEDIUM", "LOW", "INFO"];
@@ -1336,6 +1326,13 @@ def render_html_report(report: ScanReport) -> str:
           document.documentElement.setAttribute("data-theme", next);
           localStorage.setItem("plumber-theme", next);
           updateThemeLabel(next);
+        }});
+      }}
+
+      const backToTopBtn = $("backToTopBtn");
+      if (backToTopBtn) {{
+        backToTopBtn.addEventListener("click", () => {{
+          window.scrollTo({{ top: 0, behavior: "smooth" }});
         }});
       }}
 
@@ -1451,8 +1448,15 @@ def render_html_report(report: ScanReport) -> str:
           const navItem = document.createElement("a");
           navItem.className = `file-item${{idx === 0 ? " active" : ""}}`;
           navItem.href = `#f-${{idx}}`;
-          const baseName = file.path.split("/").pop();
-          navItem.innerHTML = `<span class="file-name" title="${{escapeHtml(file.path)}}">${{escapeHtml(baseName)}}</span><span class="count-badge">${{matched.length}}</span>`;
+          const baseName = String(file.path || "").split("/").pop();
+          const nameEl = document.createElement("span");
+          nameEl.className = "file-name";
+          nameEl.title = String(file.path || "");
+          nameEl.textContent = baseName;
+          const navCount = document.createElement("span");
+          navCount.className = "count-badge";
+          navCount.textContent = String(matched.length);
+          navItem.append(nameEl, navCount);
           navItem.onclick = (e) => {{
             document.querySelectorAll(".file-item").forEach((el) => el.classList.remove("active"));
             navItem.classList.add("active");
@@ -1466,20 +1470,33 @@ def render_html_report(report: ScanReport) -> str:
 
           const header = document.createElement("div");
           header.className = "file-card-header";
-          header.innerHTML = `
-            <div class="file-card-title">
-              <div class="window-dots-mini">
-                <span class="window-dot-mini close"></span>
-                <span class="window-dot-mini min"></span>
-                <span class="window-dot-mini max"></span>
-              </div>
-              <span class="file-path" title="${{escapeHtml(file.path)}}">${{escapeHtml(file.path)}}</span>
-            </div>
-            <div style="display:flex; align-items:center; gap:8px;">
-              <button class="btn-utility" type="button" data-copy-idx="${{idx}}">Copy File Fix</button>
-              <span class="window-close-x" aria-hidden="true">&times;</span>
-            </div>
-          `;
+          const titleWrap = document.createElement("div");
+          titleWrap.className = "file-card-title";
+          const dots = document.createElement("div");
+          dots.className = "window-dots-mini";
+          ["close", "min", "max"].forEach((kind) => {{
+            const dot = document.createElement("span");
+            dot.className = "window-dot-mini " + kind;
+            dots.appendChild(dot);
+          }});
+          const pathEl = document.createElement("span");
+          pathEl.className = "file-path";
+          pathEl.title = String(file.path || "");
+          pathEl.textContent = String(file.path || "");
+          titleWrap.append(dots, pathEl);
+          const actions = document.createElement("div");
+          actions.style.cssText = "display:flex; align-items:center; gap:8px;";
+          const copyBtn = document.createElement("button");
+          copyBtn.className = "btn-utility";
+          copyBtn.type = "button";
+          copyBtn.textContent = "Copy File Fix";
+          copyBtn.setAttribute("data-copy-idx", String(idx));
+          const closeMark = document.createElement("span");
+          closeMark.className = "window-close-x";
+          closeMark.setAttribute("aria-hidden", "true");
+          closeMark.textContent = "\\u00d7";
+          actions.append(copyBtn, closeMark);
+          header.append(titleWrap, actions);
           card.appendChild(header);
 
           const body = document.createElement("div");
@@ -1488,16 +1505,40 @@ def render_html_report(report: ScanReport) -> str:
           matched.forEach((issue) => {{
             const item = document.createElement("div");
             item.className = "issue-item";
-            item.innerHTML = `
-              <div class="issue-meta-row">
-                <span class="line-badge">L${{issue.line}}</span>
-                <span class="sev-badge sev-${{issue.severity}}">${{issue.severity}}</span>
-                <span class="issue-title">${{escapeHtml(issue.title)}}</span>
-                <span class="rule-id">${{escapeHtml(issue.rule_id)}}</span>
-              </div>
-              ${{issue.evidence ? `<pre class="issue-code"><code>${{escapeHtml(issue.evidence)}}</code></pre>` : ""}}
-              ${{issue.fix ? `<div class="issue-fix"><strong>Suggested Fix:</strong> ${{escapeHtml(issue.fix)}}</div>` : ""}}
-            `;
+            const meta = document.createElement("div");
+            meta.className = "issue-meta-row";
+            const lineEl = document.createElement("span");
+            lineEl.className = "line-badge";
+            lineEl.textContent = "L" + issue.line;
+            const sevEl = document.createElement("span");
+            const knownSev = SEVS.indexOf(issue.severity) !== -1;
+            sevEl.className = knownSev ? "sev-badge sev-" + issue.severity : "sev-badge";
+            sevEl.textContent = knownSev ? issue.severity : String(issue.severity || "");
+            const titleEl = document.createElement("span");
+            titleEl.className = "issue-title";
+            titleEl.textContent = issue.title || "";
+            const ruleEl = document.createElement("span");
+            ruleEl.className = "rule-id";
+            ruleEl.textContent = issue.rule_id || "";
+            meta.append(lineEl, sevEl, titleEl, ruleEl);
+            item.appendChild(meta);
+            if (issue.evidence) {{
+              const pre = document.createElement("pre");
+              pre.className = "issue-code";
+              const code = document.createElement("code");
+              code.textContent = issue.evidence;
+              pre.appendChild(code);
+              item.appendChild(pre);
+            }}
+            if (issue.fix) {{
+              const fix = document.createElement("div");
+              fix.className = "issue-fix";
+              const label = document.createElement("strong");
+              label.textContent = "Suggested Fix: ";
+              fix.appendChild(label);
+              fix.appendChild(document.createTextNode(issue.fix));
+              item.appendChild(fix);
+            }}
             body.appendChild(item);
           }});
 

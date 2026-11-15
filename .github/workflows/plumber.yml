@@ -26,9 +26,15 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e .
 
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
       - name: Run Test Suite
         run: |
           python -m unittest discover tests
+          node --test functions/_shared/report-xss.test.mjs packages/cli/test/format.test.js packages/cli/test/workflow.test.js packages/cli/test/symlink.test.js
 
       - name: Run Plumber Inspection
         run: |

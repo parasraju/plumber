@@ -4,6 +4,9 @@ CI/CD pipeline linter that flags hardcoded secrets, leaked credentials, and dead
 
 [![npm version](https://img.shields.io/npm/v/plumber-linter.svg)](https://www.npmjs.com/package/plumber-linter)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://github.com/parasraju/plumber/blob/main/LICENSE)
+[![npm downloads](https://img.shields.io/npm/dm/plumber-linter.svg)](https://www.npmjs.com/package/plumber-linter)
+[![Node.js](https://img.shields.io/node/v/plumber-linter.svg)](https://www.npmjs.com/package/plumber-linter)
+[![CI](https://img.shields.io/github/actions/workflow/status/parasraju/plumber/plumber.yml?branch=main)](https://github.com/parasraju/plumber/actions/workflows/plumber.yml)
 
 Plumber inspects codebases and git repositories in milliseconds without requiring an LLM. It enforces quality and security gates in CI/CD pipelines and git pre-commit hooks, exiting with non-zero status when critical or high-severity issues are found.
 
@@ -71,7 +74,7 @@ npx plumber-linter uninstall-hook
 
 ### SARIF output for GitHub code scanning
 
-`plumber scan . --format sarif` writes SARIF 2.1.0 JSON to stdout. The file contains one run for `plumber-linter` 1.4.1, every inspection rule (id, name, description, and the plain-English fix in `help.text`), and one result per finding. Each result's `message.text` repeats that finding's explanation and fix. Paths are relative to the scanned directory, and the line is included when the engine recorded one.
+`plumber scan . --format sarif` writes SARIF 2.1.0 JSON to stdout. The file contains one run for `plumber-linter` 1.4.2, every inspection rule (id, name, description, and the plain-English fix in `help.text`), and one result per finding. Each result's `message.text` repeats that finding's explanation and fix. Paths are relative to the scanned directory, and the line is included when the engine recorded one.
 
 ```bash
 npx plumber-linter scan . --format sarif > results.sarif
@@ -137,6 +140,64 @@ jobs:
            Found: ref: ${{ github.event.pull_request.head.sha }}
            Fix:   Use pull_request, or check out the base ref read-only with no secrets.
 ```
+
+---
+
+## Before / after — what plumber catches
+
+Use this github actions workflow security example as the ci cd pipeline linter before after for one deploy job. The job commits an API key, sets permissions to write-all, and tags a third-party action.
+
+The file in this repo is `packages/cli/examples/.github/workflows/deploy-before.yml`.
+
+```yaml
+name: deploy
+on: push
+permissions: write-all
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: example/action@v1
+        env:
+          OPENAI_API_KEY: sk-live1234567890abcdef1234567890
+```
+
+```bash
+node packages/cli/bin/plumber.js scan packages/cli/examples/.github/workflows/deploy-before.yml
+```
+
+```text
+  [FILE] deploy-before.yml
+    L10   [CRITICAL] Leaked OpenAI / Model API Key
+           Found: OPENAI_API_KEY: sk-live1234567890abcdef1234567890
+           Fix:   Extract secret to .env file immediately.
+    L3    [HIGH] Overly Broad Workflow Write Permissions
+           Found: permissions: write-all
+           Fix:   Use least-privilege permissions (e.g., permissions: { contents: read }).
+    L8    [MEDIUM] Unpinned Third-Party Action
+           Found: - uses: example/action@v1
+           Fix:   Pin the action to a full commit SHA.
+```
+
+The fixed workflow pins that action to a 40-character SHA, moves the key to `${{ secrets.OPENAI_API_KEY }}`, and sets permissions to `contents: read`.
+
+```yaml
+name: deploy
+on: push
+permissions:
+  contents: read
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: example/action@0123456789abcdef0123456789abcdef01234567
+      - name: publish
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: echo "$OPENAI_API_KEY"
+```
+
+A second scan of the fixed workflow exits 0 and reports no findings.
 
 ---
 
@@ -221,6 +282,9 @@ Spots hallucinated library imports invented by LLMs or packages missing from pro
 ---
 
 ## Changelog
+
+## 1.4.2
+README adds a before/after GitHub Actions workflow scan and badges for monthly npm downloads, the Node.js engine, and the CI workflow on main.
 
 ## 1.4.1
 `plumber scan` skips symlinks, including dangling links such as a `README.md` that points at a missing file, instead of crashing.

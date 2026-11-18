@@ -3,7 +3,7 @@
 /**
  * Plumber CLI & MCP Server (Node.js Thin Client)
  * Inspects repositories for leaked credentials, AI slop tells, broken pipes, and fragile joints.
- * GitHub Actions workflow YAML is parsed with js-yaml.
+ * GitHub Actions workflow YAML and GitLab CI YAML are parsed with js-yaml.
  */
 
 const fs = require('fs');
@@ -77,7 +77,12 @@ const RULES = [
   { id: 'sec/expression-injection', cat: 'Leaks & Secrets', sev: 'CRITICAL', title: 'Expression Injection in Workflow run Step', fix: 'Pass the value through an env: variable and reference that variable in the script.' },
   { id: 'pipe/action-unpinned', cat: 'Pipes & Dependencies', sev: 'MEDIUM', title: 'Unpinned Third-Party Action', fix: 'Pin the action to a full commit SHA.' },
   { id: 'sec/job-permissions', cat: 'Leaks & Secrets', sev: 'HIGH', title: 'Job Writes Without Least-Privilege Permissions', fix: 'Set least-privilege permissions on the job.' },
-  { id: 'sec/secret-to-untrusted', cat: 'Leaks & Secrets', sev: 'HIGH', title: 'Secret Passed to Untrusted Step', fix: 'Scope the secret to the trusted step that needs it.' }
+  { id: 'sec/secret-to-untrusted', cat: 'Leaks & Secrets', sev: 'HIGH', title: 'Secret Passed to Untrusted Step', fix: 'Scope the secret to the trusted step that needs it.' },
+  { id: 'pipe/gitlab-include-unpinned', cat: 'Pipes & Dependencies', sev: 'MEDIUM', title: 'Unpinned GitLab CI Include', fix: 'Pin ref: to a full commit SHA or a tag.' },
+  { id: 'sec/gitlab-artifact-secret', cat: 'Leaks & Secrets', sev: 'CRITICAL', title: 'Secret File Uploaded as a Pipeline Artifact', fix: 'Remove the file from artifacts: paths: and pass secrets via CI/CD variables.' },
+  { id: 'sec/gitlab-cache-shared', cat: 'Leaks & Secrets', sev: 'MEDIUM', title: 'Shared Cache Without a Per-Branch Key', fix: 'Set an explicit per-branch key, e.g. key: $CI_COMMIT_REF_SLUG.' },
+  { id: 'sec/gitlab-allow-failure-gate', cat: 'Leaks & Secrets', sev: 'MEDIUM', title: 'Security or Test Job Allows Failure', fix: 'Remove allow_failure: true from the gate job (or set it false).' },
+  { id: 'sec/gitlab-deploy-unprotected', cat: 'Leaks & Secrets', sev: 'HIGH', title: 'Production Deploy Not Limited to Protected Refs', fix: 'Add rules: restricting the job to protected branches or tags (e.g. rules: - if: $CI_COMMIT_BRANCH == "main").' }
 ];
 
 const SEV_WEIGHT = { CRITICAL: 4, HIGH: 3, MEDIUM: 2, LOW: 1, INFO: 0 };
@@ -95,6 +100,11 @@ const CONTENTS_ACTIONS = new Set([
   'peaceiris/actions-gh-pages',
   'ncipollo/release-action'
 ]);
+const GITLAB_GLOBAL_KEYS = new Set([
+  'default', 'include', 'stages', 'types', 'variables', 'workflow', 'spec',
+  'image', 'services', 'before_script', 'after_script', 'cache'
+]);
+const GITLAB_GATE_NAME = /scan|test|lint|audit|sast|secret|security/i;
 
 // Main entry
 const args = process.argv.slice(2);
@@ -220,7 +230,9 @@ function scanLocalDirectory(dirPath) {
           const rel = (current === dirPath ? base : path.relative(dirPath, current)).replace(/\\/g, '/');
           const fileIssues = inspectFile(rel, content, lines, ext);
           const workflowIssues = collectWorkflowIssues(current, rel, content, lines);
+          const gitlabIssues = collectGitlabIssues(current, rel, content, lines);
           if (workflowIssues.length > 0) fileIssues.push(...workflowIssues);
+          if (gitlabIssues.length > 0) fileIssues.push(...gitlabIssues);
           if (fileIssues.length > 0) {
             issues.push(...fileIssues);
             fileReports.push({ path: rel, issues: fileIssues });
@@ -480,6 +492,356 @@ function collectWorkflowIssues(absPath, relPath, content, lines) {
     console.error(`[Error] Workflow scan failed for ${workflowPath}: ${detail}`);
     return [];
   }
+}
+
+function isGitlabCiBasename(filePath) {
+  const base = path.basename(String(filePath || ''));
+  return base === '.gitlab-ci.yml' || base === '.gitlab-ci.yaml';
+}
+
+function collectGitlabIssues(absPath, relPath, content, lines) {
+  if (!isGitlabCiBasename(absPath) && !isGitlabCiBasename(relPath)) return [];
+  const label = String(relPath || path.basename(absPath)).replace(/\\/g, '/');
+  try {
+    const doc = loadGitlabDocument(content, label);
+    if (!doc) return [];
+    return inspectGitlab(doc, lines);
+  } catch (err) {
+    const detail = err && err.message ? err.message : String(err);
+    console.error(`[Error] Workflow scan failed for ${label}: ${detail}`);
+    return [];
+  }
+}
+
+function loadGitlabDocument(content, filePath) {
+  let doc;
+  try {
+    doc = yaml.load(content, { schema: yaml.DEFAULT_SCHEMA });
+  } catch (err) {
+    const detail = err && err.message ? err.message : String(err);
+    console.error(`[Error] Failed to parse workflow YAML ${filePath}: ${detail}`);
+    return null;
+  }
+  if (!doc || typeof doc !== 'object' || Array.isArray(doc)) return null;
+  return doc;
+}
+
+function inspectGitlab(doc, lines) {
+  const found = [];
+  const seen = new Set();
+  function add(ruleId, line, evidence) {
+    const issue = makeIssue(ruleId, line, evidence);
+    const key = issue.rule_id + '\n' + issue.line + '\n' + issue.evidence;
+    if (seen.has(key)) return;
+    seen.add(key);
+    found.push(issue);
+  }
+  collectGitlabUnpinnedInclude(doc, lines, add);
+  collectGitlabArtifactSecrets(doc, lines, add);
+  collectGitlabSharedCache(doc, lines, add);
+  collectGitlabAllowFailure(doc, lines, add);
+  collectGitlabUnprotectedDeploy(doc, lines, add);
+  return found;
+}
+
+function eachGitlabJob(doc, visit) {
+  const names = Object.keys(doc);
+  for (let i = 0; i < names.length; i++) {
+    const name = names[i];
+    if (GITLAB_GLOBAL_KEYS.has(name)) continue;
+    const job = doc[name];
+    if (!job || typeof job !== 'object' || Array.isArray(job)) continue;
+    visit(name, job);
+  }
+}
+
+function gitlabIncludeEntries(includeValue) {
+  if (Array.isArray(includeValue)) return includeValue;
+  if (includeValue && typeof includeValue === 'object') return [includeValue];
+  return [];
+}
+
+function includeEntryHasFile(file) {
+  if (typeof file === 'string') return file.trim().length > 0;
+  if (!Array.isArray(file)) return false;
+  for (let i = 0; i < file.length; i++) {
+    if (typeof file[i] === 'string' && file[i].trim()) return true;
+  }
+  return false;
+}
+
+function includeEntryHasRef(entry) {
+  if (entry.ref === undefined || entry.ref === null) return false;
+  return String(entry.ref).trim().length > 0;
+}
+
+function collectGitlabUnpinnedInclude(doc, lines, add) {
+  const entries = gitlabIncludeEntries(doc.include);
+  let cursor = 0;
+  for (let i = 0; i < entries.length; i++) {
+    const entry = entries[i];
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) continue;
+    const remote = typeof entry.remote === 'string' ? entry.remote.trim() : '';
+    if (remote) {
+      const line = lineOfSnippet(lines, remote, cursor) || lineMatchingFrom(lines, /^include\s*:/, 0) || 1;
+      cursor = line;
+      add('pipe/gitlab-include-unpinned', line, lines[line - 1] || remote);
+      continue;
+    }
+    const project = typeof entry.project === 'string' ? entry.project.trim() : '';
+    if (!project || !includeEntryHasFile(entry.file) || includeEntryHasRef(entry)) continue;
+    const line = lineOfSnippet(lines, project, cursor) || lineMatchingFrom(lines, /^include\s*:/, 0) || 1;
+    cursor = line;
+    add('pipe/gitlab-include-unpinned', line, lines[line - 1] || project);
+  }
+}
+
+function artifactPathList(artifacts) {
+  if (!artifacts || typeof artifacts !== 'object' || Array.isArray(artifacts)) return [];
+  const paths = artifacts.paths;
+  if (typeof paths === 'string') return [paths];
+  if (!Array.isArray(paths)) return [];
+  const found = [];
+  for (let i = 0; i < paths.length; i++) {
+    if (typeof paths[i] === 'string' && paths[i].trim()) found.push(paths[i]);
+  }
+  return found;
+}
+
+function isSecretArtifactPath(artifactPath) {
+  const norm = String(artifactPath).replace(/\\/g, '/');
+  const parts = norm.split('/').filter(Boolean);
+  const base = parts.length ? parts[parts.length - 1] : norm;
+  if (base === '.env' || base.startsWith('.env.')) return true;
+  if (base.endsWith('.pem') || base.endsWith('.key')) return true;
+  if (base.startsWith('id_rsa')) return true;
+  return false;
+}
+
+function collectGitlabArtifactSecrets(doc, lines, add) {
+  let cursor = 0;
+  eachGitlabJob(doc, function (name, job) {
+    const paths = artifactPathList(job.artifacts);
+    if (!paths.length) return;
+    const jobLine = findGitlabJobLine(lines, name);
+    const regionEnd = nextGitlabKey(lines, jobLine);
+    for (let i = 0; i < paths.length; i++) {
+      if (!isSecretArtifactPath(paths[i])) continue;
+      const line = lineOfArtifactPath(lines, paths[i].trim(), cursor)
+        || findLineMatching(lines, /artifacts\s*:/, jobLine - 1, regionEnd)
+        || jobLine;
+      cursor = line;
+      add('sec/gitlab-artifact-secret', line, lines[line - 1] || paths[i]);
+    }
+  });
+}
+
+function cacheBlocks(value) {
+  if (!value) return [];
+  if (Array.isArray(value)) {
+    const blocks = [];
+    for (let i = 0; i < value.length; i++) {
+      if (value[i] && typeof value[i] === 'object' && !Array.isArray(value[i])) blocks.push(value[i]);
+    }
+    return blocks;
+  }
+  if (typeof value === 'object') return [value];
+  return [];
+}
+
+function cacheKeyIsShared(key) {
+  if (key === undefined || key === null) return true;
+  if (typeof key === 'string' || typeof key === 'number' || typeof key === 'boolean') {
+    return !/\$/.test(String(key));
+  }
+  if (typeof key === 'object' && !Array.isArray(key)) {
+    if (key.prefix === undefined || key.prefix === null || String(key.prefix).trim() === '') return true;
+    return !/\$/.test(String(key.prefix));
+  }
+  return true;
+}
+
+function topLevelRegion(lines, key) {
+  const at = lineMatchingFrom(lines, new RegExp('^' + escapeRegExp(key) + '\\s*:'), 0);
+  if (!at) return null;
+  return { start: at - 1, end: nextGitlabKey(lines, at), line: at };
+}
+
+function lineOfCacheInRegion(lines, block, cursor, region) {
+  const key = block.key;
+  const from = cursor > region.start ? cursor : region.start;
+  if (typeof key === 'string' || typeof key === 'number' || typeof key === 'boolean') {
+    const text = String(key).trim();
+    if (text) {
+      const keyed = findPatternInRegion(lines, new RegExp('key\\s*:.*' + escapeRegExp(text)), from, region.end);
+      if (keyed) return keyed;
+      const line = findSnippetInRegion(lines, text, from, region.end);
+      if (line) return line;
+    }
+  }
+  if (key !== undefined && key !== null) {
+    const keyLine = findPatternInRegion(lines, /^\s*key\s*:/, from, region.end);
+    if (keyLine) return keyLine;
+  }
+  const cacheLine = findPatternInRegion(lines, /^\s*cache\s*:/, region.start, region.end);
+  if (cacheLine) return cacheLine;
+  return region.line;
+}
+
+function flagCacheInRegion(lines, cacheValue, region, add) {
+  if (!region) return;
+  const blocks = cacheBlocks(cacheValue);
+  let cursor = region.start;
+  for (let i = 0; i < blocks.length; i++) {
+    const line = lineOfCacheInRegion(lines, blocks[i], cursor, region);
+    cursor = line;
+    if (!cacheKeyIsShared(blocks[i].key)) continue;
+    add('sec/gitlab-cache-shared', line, lines[line - 1] || 'cache');
+  }
+}
+
+function collectGitlabSharedCache(doc, lines, add) {
+  flagCacheInRegion(lines, doc.cache, topLevelRegion(lines, 'cache'), add);
+  if (doc.default && typeof doc.default === 'object' && !Array.isArray(doc.default)) {
+    flagCacheInRegion(lines, doc.default.cache, topLevelRegion(lines, 'default'), add);
+  }
+  eachGitlabJob(doc, function (name, job) {
+    const jobLine = findGitlabJobLine(lines, name);
+    flagCacheInRegion(lines, job.cache, {
+      start: jobLine - 1,
+      end: nextGitlabKey(lines, jobLine),
+      line: jobLine
+    }, add);
+  });
+}
+
+function allowFailureIsTrue(value) {
+  if (value === true) return true;
+  if (typeof value === 'string' && value.trim().toLowerCase() === 'true') return true;
+  return false;
+}
+
+function collectGitlabAllowFailure(doc, lines, add) {
+  eachGitlabJob(doc, function (name, job) {
+    if (!GITLAB_GATE_NAME.test(name)) return;
+    if (!allowFailureIsTrue(job.allow_failure)) return;
+    const jobLine = findGitlabJobLine(lines, name);
+    const regionEnd = nextGitlabKey(lines, jobLine);
+    const line = findLineMatching(lines, /allow_failure\s*:/, jobLine - 1, regionEnd) || jobLine;
+    add('sec/gitlab-allow-failure-gate', line, lines[line - 1] || name);
+  });
+}
+
+function environmentName(environment) {
+  if (typeof environment === 'string') return environment;
+  if (typeof environment === 'number' || typeof environment === 'boolean') return String(environment);
+  if (!environment || typeof environment !== 'object' || Array.isArray(environment)) return '';
+  if (typeof environment.name === 'string') return environment.name;
+  if (typeof environment.name === 'number' || typeof environment.name === 'boolean') return String(environment.name);
+  return '';
+}
+
+function jobLimitsRefs(job) {
+  if (job.rules !== undefined && job.rules !== null) return true;
+  if (job.only !== undefined && job.only !== null) return true;
+  if (job.except !== undefined && job.except !== null) return true;
+  return false;
+}
+
+function collectGitlabUnprotectedDeploy(doc, lines, add) {
+  eachGitlabJob(doc, function (name, job) {
+    if (!/prod/i.test(environmentName(job.environment))) return;
+    if (jobLimitsRefs(job)) return;
+    const jobLine = findGitlabJobLine(lines, name);
+    const regionEnd = nextGitlabKey(lines, jobLine);
+    const line = findLineMatching(lines, /environment\s*:/, jobLine - 1, regionEnd) || jobLine;
+    add('sec/gitlab-deploy-unprotected', line, lines[line - 1] || name);
+  });
+}
+
+function findGitlabJobLine(lines, jobName) {
+  const pattern = new RegExp('^' + escapeRegExp(jobName) + '\\s*:');
+  for (let i = 0; i < lines.length; i++) {
+    if (pattern.test(lines[i])) return i + 1;
+  }
+  return 1;
+}
+
+function nextGitlabKey(lines, jobLine) {
+  for (let i = jobLine; i < lines.length; i++) {
+    const line = lines[i];
+    if (!line || /^\s/.test(line) || /^\s*#/.test(line)) continue;
+    if (/^[^\s#].*:/.test(line)) return i;
+  }
+  return lines.length;
+}
+
+function lineOfArtifactPath(lines, artifactPath, start) {
+  const needle = String(artifactPath);
+  if (!needle) return 0;
+  const from = start > 0 ? start : 0;
+  function hit(i) {
+    const trim = lines[i].trim();
+    if (!trim || trim.startsWith('#')) return false;
+    const idx = lines[i].indexOf(needle);
+    if (idx === -1) return false;
+    const after = lines[i].charAt(idx + needle.length);
+    return !after || !/[A-Za-z0-9._-]/.test(after);
+  }
+  for (let i = from; i < lines.length; i++) {
+    if (hit(i)) return i + 1;
+  }
+  for (let i = 0; i < from; i++) {
+    if (hit(i)) return i + 1;
+  }
+  return 0;
+}
+
+function findSnippetInRegion(lines, snippet, start, end) {
+  const needle = String(snippet);
+  if (!needle) return 0;
+  const from = Math.max(0, start);
+  const to = Math.min(lines.length, end);
+  for (let i = from; i < to; i++) {
+    const trim = lines[i].trim();
+    if (!trim || trim.startsWith('#')) continue;
+    if (lines[i].includes(needle)) return i + 1;
+  }
+  return 0;
+}
+
+function findPatternInRegion(lines, pattern, start, end) {
+  const from = Math.max(0, start);
+  const to = Math.min(lines.length, end);
+  for (let i = from; i < to; i++) {
+    if (pattern.test(lines[i])) return i + 1;
+  }
+  return 0;
+}
+
+function lineOfSnippet(lines, snippet, start) {
+  const needle = String(snippet);
+  if (!needle) return 0;
+  const from = start > 0 ? start : 0;
+  for (let i = from; i < lines.length; i++) {
+    const trim = lines[i].trim();
+    if (!trim || trim.startsWith('#')) continue;
+    if (lines[i].includes(needle)) return i + 1;
+  }
+  for (let i = 0; i < from; i++) {
+    const trim = lines[i].trim();
+    if (!trim || trim.startsWith('#')) continue;
+    if (lines[i].includes(needle)) return i + 1;
+  }
+  return 0;
+}
+
+function lineMatchingFrom(lines, pattern, start) {
+  const from = start > 0 ? start : 0;
+  for (let i = from; i < lines.length; i++) {
+    if (pattern.test(lines[i])) return i + 1;
+  }
+  return 0;
 }
 
 function ruleById(id) {

@@ -1,7 +1,7 @@
 {
   "name": "plumber-linter",
-  "version": "1.4.2",
-  "description": "CI/CD pipeline linter that flags hardcoded secrets, leaked credentials, and dead code — with fixes in plain English, plus SARIF output for GitHub code scanning and workflow YAML scanning for GitHub Actions.",
+  "version": "1.5.0",
+  "description": "CI/CD pipeline linter that flags hardcoded secrets, leaked credentials, and dead code — with fixes in plain English, plus SARIF output for GitHub code scanning, workflow YAML scanning for GitHub Actions, and GitLab CI rules for .gitlab-ci.yml.",
   "main": "bin/plumber.js",
   "bin": {
     "plumber": "bin/plumber.js",
@@ -26,7 +26,8 @@
     "sarif",
     "github-code-scanning",
     "yaml",
-    "workflow-scanning"
+    "workflow-scanning",
+    "gitlab-ci"
   ],
   "author": "Paras Raju",
   "license": "MIT",

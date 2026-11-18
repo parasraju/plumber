@@ -1,6 +1,6 @@
 # Plumber
 
-CI/CD pipeline linter that flags hardcoded secrets, leaked credentials, and dead code — with fixes in plain English, plus SARIF output for GitHub code scanning and workflow YAML scanning for GitHub Actions.
+CI/CD pipeline linter that flags hardcoded secrets, leaked credentials, and dead code — with fixes in plain English, plus SARIF output for GitHub code scanning, workflow YAML scanning for GitHub Actions, and GitLab CI rules for .gitlab-ci.yml.
 
 [![npm version](https://img.shields.io/npm/v/plumber-linter.svg)](https://www.npmjs.com/package/plumber-linter)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://github.com/parasraju/plumber/blob/main/LICENSE)
@@ -40,7 +40,7 @@ npx plumber-linter scan . --format md
 npx plumber-linter scan . --format json
 npx plumber-linter scan . --format sarif
 
-# View all 31 inspection rules
+# View all 36 inspection rules
 npx plumber-linter rules
 ```
 
@@ -74,7 +74,7 @@ npx plumber-linter uninstall-hook
 
 ### SARIF output for GitHub code scanning
 
-`plumber scan . --format sarif` writes SARIF 2.1.0 JSON to stdout. The file contains one run for `plumber-linter` 1.4.2, every inspection rule (id, name, description, and the plain-English fix in `help.text`), and one result per finding. Each result's `message.text` repeats that finding's explanation and fix. Paths are relative to the scanned directory, and the line is included when the engine recorded one.
+`plumber scan . --format sarif` writes SARIF 2.1.0 JSON to stdout. The file contains one run for `plumber-linter` 1.5.0, every inspection rule (id, name, description, and the plain-English fix in `help.text`), and one result per finding. Each result's `message.text` repeats that finding's explanation and fix. Paths are relative to the scanned directory, and the line is included when the engine recorded one.
 
 ```bash
 npx plumber-linter scan . --format sarif > results.sarif
@@ -140,6 +140,46 @@ jobs:
            Found: ref: ${{ github.event.pull_request.head.sha }}
            Fix:   Use pull_request, or check out the base ref read-only with no secrets.
 ```
+
+### GitLab CI rules — .gitlab-ci.yml scanning
+
+`plumber scan` checks `.gitlab-ci.yml` and `.gitlab-ci.yaml` in any directory. These five rules are a gitlab-ci.yml linter for gitlab ci security issues that the generic YAML checks do not cover. A repository with no GitLab CI file is unchanged.
+
+| Rule | Severity | What it catches | Fix |
+| --- | --- | --- | --- |
+| `pipe/gitlab-include-unpinned` | MEDIUM | An `include` with a `remote` URL, or a `project` and `file` and no `ref` | Pin ref: to a full commit SHA or a tag. |
+| `sec/gitlab-artifact-secret` | CRITICAL | `artifacts: paths` lists `.env`, `.env.*`, `*.pem`, `*.key`, or `id_rsa*` | Remove the file from artifacts: paths: and pass secrets via CI/CD variables. |
+| `sec/gitlab-cache-shared` | MEDIUM | A `cache` with no `key`, or a key that is the same on every branch | Set an explicit per-branch key, e.g. key: $CI_COMMIT_REF_SLUG. |
+| `sec/gitlab-allow-failure-gate` | MEDIUM | A job whose name contains scan, test, lint, audit, sast, secret, or security, with `allow_failure: true` | Remove allow_failure: true from the gate job (or set it false). |
+| `sec/gitlab-deploy-unprotected` | HIGH | A job whose `environment` name contains `prod` and that has no `rules`, `only`, or `except` | Add rules: restricting the job to protected branches or tags (e.g. rules: - if: $CI_COMMIT_BRANCH == "main"). |
+
+`.gitlab-ci.yml`:
+
+```yaml
+include:
+  - remote: https://example.com/ci/base.yml
+job:
+  script:
+    - echo ok
+```
+
+```text
+  [FILE] .gitlab-ci.yml
+    L2    [MEDIUM] Unpinned GitLab CI Include
+           Found: - remote: https://example.com/ci/base.yml
+           Fix:   Pin ref: to a full commit SHA or a tag.
+```
+
+A `remote` include has no `ref`. Pin the included file with `project` and a commit SHA.
+
+```yaml
+include:
+  - project: group/ci-templates
+    ref: 0123456789abcdef0123456789abcdef01234567
+    file: /ci/base.yml
+```
+
+A scan of that pinned include reports no findings.
 
 ---
 
@@ -282,6 +322,9 @@ Spots hallucinated library imports invented by LLMs or packages missing from pro
 ---
 
 ## Changelog
+
+## 1.5.0
+GitLab CI rules pack — 5 new rules for .gitlab-ci.yml (unpinned includes, artifact secrets, shared cache, allow-failure gates, unprotected deploys).
 
 ## 1.4.2
 README adds a before/after GitHub Actions workflow scan and badges for monthly npm downloads, the Node.js engine, and the CI workflow on main.

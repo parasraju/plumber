@@ -37,7 +37,7 @@ jobs:
       - name: Run Test Suite
         run: |
           python -m unittest discover tests
-          node --test functions/_shared/report-xss.test.mjs packages/cli/test/format.test.js packages/cli/test/workflow.test.js packages/cli/test/symlink.test.js
+          node --test functions/_shared/report-xss.test.mjs packages/cli/test/format.test.js packages/cli/test/workflow.test.js packages/cli/test/symlink.test.js packages/cli/test/gitlab.test.js
 
       - name: Run Plumber Inspection
         run: |

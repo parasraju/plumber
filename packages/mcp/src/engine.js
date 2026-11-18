@@ -1044,6 +1044,155 @@ function loadRulePack(filePath) {
   }
 }
 
+const CONFIG_TYPES = new Set(['github-actions', 'gitlab-ci', 'dockerfile', 'auto']);
+const FAIL_ON_LEVELS = ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW'];
+const UNKNOWN_CONFIG_NOTE = 'Could not detect the config type from the path or content. Ran the full rule set.';
+
+function normalizeConfigPath(filePath) {
+  return String(filePath || '').replace(/\\/g, '/');
+}
+
+function detectConfigFromPath(filePath) {
+  const norm = normalizeConfigPath(filePath);
+  if (!norm) return null;
+  if (isGitHubWorkflowPath(norm)) return 'github-actions';
+  if (/(?:^|\/)\.gitlab-ci\.ya?ml$/i.test(norm)) return 'gitlab-ci';
+  if (/(?:^|\/)Dockerfile/i.test(norm)) return 'dockerfile';
+  return null;
+}
+
+function firstInstructionIsFrom(content) {
+  const lines = content.split('\n');
+  for (let i = 0; i < lines.length; i++) {
+    const trim = lines[i].trim();
+    if (!trim || trim.startsWith('#')) continue;
+    return /^FROM(?:\s|$)/i.test(trim);
+  }
+  return false;
+}
+
+function detectConfigFromContent(content) {
+  if (looksLikeWorkflowSource(content)) return 'github-actions';
+  if (/^[ \t]*(?:stages|script)[ \t]*:/m.test(content)) return 'gitlab-ci';
+  if (firstInstructionIsFrom(content)) return 'dockerfile';
+  return null;
+}
+
+function resolveConfigType(filename, content, requested) {
+  const asked = requested || 'auto';
+  if (asked !== 'auto') return { configType: asked, detectedBy: 'explicit' };
+  const fromPath = detectConfigFromPath(filename);
+  if (fromPath) return { configType: fromPath, detectedBy: 'path' };
+  const fromContent = detectConfigFromContent(content);
+  if (fromContent) return { configType: fromContent, detectedBy: 'content' };
+  return { configType: 'unknown', detectedBy: 'failed' };
+}
+
+function rulePathForConfig(configType, filename) {
+  const display = normalizeConfigPath(filename);
+  if (configType === 'github-actions') {
+    if (isGitHubWorkflowPath(display) || /(?:^|\/)workflows\/[^/]+\.ya?ml$/i.test(display)) return display;
+    return '.github/workflows/config.yml';
+  }
+  if (configType === 'gitlab-ci') {
+    if (!display || isGitHubWorkflowPath(display)) return '.gitlab-ci.yml';
+    return display;
+  }
+  if (configType === 'dockerfile') {
+    if (!display || isGitHubWorkflowPath(display)) return 'Dockerfile';
+    return display;
+  }
+  return display || 'config';
+}
+
+function countBySeverity(findings) {
+  const counts = { CRITICAL: 0, HIGH: 0, MEDIUM: 0, LOW: 0 };
+  for (let i = 0; i < findings.length; i++) {
+    const severity = findings[i].severity;
+    if (!Object.prototype.hasOwnProperty.call(counts, severity)) counts[severity] = 0;
+    counts[severity] += 1;
+  }
+  return counts;
+}
+
+function verdictFor(findings, failOn) {
+  const bar = SEV_WEIGHT[failOn];
+  for (let i = 0; i < findings.length; i++) {
+    const weight = SEV_WEIGHT[findings[i].severity];
+    if (weight === undefined || weight >= bar) return 'fail';
+  }
+  return 'pass';
+}
+
+function toConfigFinding(issue, file) {
+  const finding = {
+    rule_id: issue.rule_id,
+    severity: issue.severity,
+    title: issue.title
+  };
+  if (file) finding.file = file;
+  finding.line = issue.line;
+  finding.evidence = issue.evidence;
+  finding.fix = issue.fix;
+  if (issue.source) finding.source = issue.source;
+  return finding;
+}
+
+// One config, pass/fail. Matching stays in inspectFile; this only picks the path
+// and the workflow flag the existing file filter already understands.
+function scanConfig(text, filename, options) {
+  if (typeof text !== 'string') {
+    throw new TypeError('text must be a string');
+  }
+  const opts = options || {};
+  const requested = opts.configType || 'auto';
+  if (!CONFIG_TYPES.has(requested)) {
+    throw new TypeError('configType must be one of: github-actions, gitlab-ci, dockerfile, auto');
+  }
+  const failOn = opts.failOn || 'HIGH';
+  if (FAIL_ON_LEVELS.indexOf(failOn) === -1) {
+    throw new TypeError('failOn must be one of: CRITICAL, HIGH, MEDIUM, LOW');
+  }
+  const pack = opts.pack || null;
+  const content = text.replace(/\r\n?/g, '\n');
+  const lines = content.split('\n');
+  const detected = resolveConfigType(filename, content, requested);
+  const rulePath = rulePathForConfig(detected.configType, filename);
+  const ext = path.extname(rulePath).toLowerCase();
+  const detectWorkflow = detected.configType === 'github-actions' || detected.configType === 'unknown';
+  const issues = inspectFile(rulePath, content, lines, ext, detectWorkflow);
+  if (pack) {
+    const packPath = filename ? normalizeConfigPath(filename) : rulePath;
+    try {
+      issues.push(...collectPackIssues(packPath, content, lines, pack));
+    } catch (err) {
+      notePackError(pack, `Pack rules failed on ${packPath}: ${err.message}`);
+    }
+  }
+  const file = filename ? normalizeConfigPath(filename) : '';
+  const findings = [];
+  for (let i = 0; i < issues.length; i++) {
+    findings.push(toConfigFinding(issues[i], file));
+  }
+  const result = {
+    configType: detected.configType,
+    detectedBy: detected.detectedBy,
+    verdict: verdictFor(findings, failOn),
+    failOn: failOn,
+    counts: countBySeverity(findings),
+    findings: findings
+  };
+  if (detected.detectedBy === 'failed') result.note = UNKNOWN_CONFIG_NOTE;
+  if (pack) {
+    result.pack = {
+      path: pack.path,
+      rulesLoaded: Array.isArray(pack.rules) ? pack.rules.length : 0,
+      errors: Array.isArray(pack.errors) ? pack.errors.slice() : []
+    };
+  }
+  return result;
+}
+
 function resolveScanPack(targetPath, rulesFile) {
   if (typeof rulesFile === 'string' && rulesFile.trim() !== '') {
     return loadRulePack(rulesFile);
@@ -1090,6 +1239,7 @@ module.exports = {
   SCANNABLE_EXTS,
   scanLocalDirectory,
   scanText,
+  scanConfig,
   loadRulePack,
   resolveScanPack
 };

@@ -554,7 +554,7 @@ test('plumber_scan_text on a non-workflow snippet stays on the old rules', () =>
   one(byPath, 'sec/expression-injection');
 });
 
-test('mcp server speaks stdio and keeps the three tool schemas', async () => {
+test('mcp server speaks stdio and keeps the original three tool schemas', async () => {
   const { Client } = require('@modelcontextprotocol/sdk/client/index.js');
   const { StdioClientTransport } = require('@modelcontextprotocol/sdk/client/stdio.js');
   const empty = fs.mkdtempSync(path.join(os.tmpdir(), 'plumber-mcp-empty-'));
@@ -566,10 +566,10 @@ test('mcp server speaks stdio and keeps the three tool schemas', async () => {
   const client = new Client({ name: 'plumber-mcp-test', version: '1.1.0' }, { capabilities: {} });
   await client.connect(transport);
   try {
-    assert.deepEqual(client.getServerVersion(), { name: 'plumber-mcp', version: '1.2.0' });
+    assert.deepEqual(client.getServerVersion(), { name: 'plumber-mcp', version: '1.3.0' });
     const listed = await client.listTools();
-    assert.deepEqual(listed.tools.map((tool) => tool.name), ['plumber_scan', 'plumber_list_rules', 'plumber_scan_text']);
-    assert.equal(listed.tools.length, 3);
+    assert.deepEqual(listed.tools.map((tool) => tool.name), ['plumber_scan', 'plumber_list_rules', 'plumber_scan_text', 'plumber_scan_config']);
+    assert.equal(listed.tools.length, 4);
     assert.deepEqual(listed.tools[0].inputSchema, {
       type: 'object',
       properties: {

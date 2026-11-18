@@ -86,12 +86,63 @@ Add to `.vscode/mcp.json`:
 | `plumber_scan` | Scan a local directory or file. Returns a score, grade, file count, and one line per issue with its fix. Optional `rulesFile`, or `.plumber-rules.json` in the target, adds a rule pack. |
 | `plumber_list_rules` | List all 26 inspection rules with id, severity, title, and fix. Optional `rulesFile` appends pack rules marked `source: pack`. |
 | `plumber_scan_text` | Scan a pasted code or config snippet. `filename` is optional and only selects the applicable rules. Optional `rulesFile` adds a rule pack. |
+| `plumber_scan_config` | Scan one pipeline config, from a path or pasted text, and return a pass/fail verdict at `failOn` (default `HIGH`) with findings and severity counts. |
 
 Tool inputs are deliberately small so they cost few tokens:
 
 - `plumber_scan`: `target` (string, default `"."`), `rulesFile` (string, optional)
 - `plumber_list_rules`: `rulesFile` (string, optional)
 - `plumber_scan_text`: `text` (string, required), `filename` (string, optional), `rulesFile` (string, optional)
+- `plumber_scan_config`: `configPath` or `configText` (string, exactly one), `configType` (string, optional, default `auto`), `rulesFile` (string, optional), `failOn` (string, optional, default `HIGH`)
+
+### Scan one config — plumber_scan_config
+
+`plumber_scan` reads a whole tree and `plumber_scan_text` reads a generic snippet. `plumber_scan_config` answers the question those two do not: is this one pipeline config safe to commit? To scan a config file, pass `configPath`. To check text the agent just wrote, pass `configText`. Exactly one of those is required. The tool reads local files and pasted text only. It does not fetch a URL, and it does not return a rewritten config.
+
+`configType` is `github-actions`, `gitlab-ci`, `dockerfile`, or `auto` (the default). `auto` reads the path first: `.github/workflows/*.yml` and `*.yaml` are `github-actions`, `.gitlab-ci.yml` is `gitlab-ci`, and a name starting with `Dockerfile` is `dockerfile`. If the path does not say, the contents are checked: a line `on:` together with a line `jobs:` is `github-actions`, a `stages:` or `script:` line is `gitlab-ci`, and a first instruction of `FROM` is `dockerfile`. If that also fails, `configType` is `unknown`, `detectedBy` is `failed`, and the result says the full rule set ran. Rules stay the same 26: workflow rules run on GitHub Actions configs, and the other rules run the way they already do for that file type.
+
+`failOn` is the CI gate. It is `CRITICAL`, `HIGH`, `MEDIUM`, or `LOW`. The default is `HIGH`, the same bar as the CLI `--fail-on high`. `verdict` is `fail` when any finding is at that severity or above. Lower findings are still listed. A clean config returns `"verdict": "pass"` and `"findings": []`. A missing rule pack is not an error.
+
+`rulesFile` is the same local JSON pack the other tools take. With `configPath` and no `rulesFile`, `.plumber-rules.json` in the directory that contains that file is loaded when it exists. `configText` does not auto-load a pack. Pack globs match `configPath` when you pass a path. Pasted text has no path, so globs match the detected name the scanner uses for that type.
+
+> **Agent:** *(calls `plumber_scan_config` with `{ "configPath": ".github/workflows/pr.yml" }` before committing a workflow that checks out pull request code from `pull_request_target` and uses `example/deploy@v1`)*
+
+```json
+{
+  "configType": "github-actions",
+  "detectedBy": "path",
+  "verdict": "fail",
+  "failOn": "HIGH",
+  "counts": {
+    "CRITICAL": 1,
+    "HIGH": 0,
+    "MEDIUM": 1,
+    "LOW": 0
+  },
+  "findings": [
+    {
+      "rule_id": "sec/pull-request-target",
+      "severity": "CRITICAL",
+      "title": "Untrusted pull_request_target Checkout or Write Permission",
+      "file": ".github/workflows/pr.yml",
+      "line": 9,
+      "evidence": "ref: ${{ github.event.pull_request.head.sha }}",
+      "fix": "Use pull_request, or check out the base ref read-only with no secrets."
+    },
+    {
+      "rule_id": "pipe/action-unpinned",
+      "severity": "MEDIUM",
+      "title": "Unpinned Third-Party Action",
+      "file": ".github/workflows/pr.yml",
+      "line": 10,
+      "evidence": "- uses: example/deploy@v1",
+      "fix": "Pin the action to a full commit SHA."
+    }
+  ]
+}
+```
+
+> **Agent:** The verdict is fail. I will not commit `.github/workflows/pr.yml`. The untrusted checkout is `sec/pull-request-target`: Use pull_request, or check out the base ref read-only with no secrets. The unpinned action is `pipe/action-unpinned`: Pin the action to a full commit SHA.
 
 ## Example session
 
@@ -145,7 +196,7 @@ A bad rule is dropped. The tool result includes a `Pack error:` line that names 
 One pack is loaded, in this order:
 
 1. `rulesFile`, when the tool call includes it. A relative path is resolved from the server's working directory.
-2. Auto-load, only for `plumber_scan`, and only when `rulesFile` is omitted. Plumber reads `.plumber-rules.json` in the directory passed as `target`. A file target uses the directory that contains that file. Parent folders and subfolders are not searched. `plumber_scan_text` and `plumber_list_rules` do not auto-load.
+2. Auto-load, only for `plumber_scan`, and for `plumber_scan_config` when the call passes `configPath`. Both only auto-load when `rulesFile` is omitted. Plumber reads `.plumber-rules.json` in the directory passed as `target`, or in the directory that contains `configPath`. A file target uses the directory that contains that file. Parent folders and subfolders are not searched. `plumber_scan_text`, `plumber_list_rules`, and `plumber_scan_config` with `configText` do not auto-load.
 3. When both are present, `rulesFile` is the pack that runs. The two files are not merged.
 
 The scan result names the pack on one line: the file path and how many pack rules loaded, for example `Pack: /repo/.plumber-rules.json (2 pack rules loaded)`.
@@ -199,6 +250,9 @@ The secret-format rule above does not check Python files. The banned-marker rule
 - MCP TypeScript SDK: [github.com/modelcontextprotocol/typescript-sdk](https://github.com/modelcontextprotocol/typescript-sdk)
 
 ## Changelog
+
+## 1.3.0
+New tool plumber_scan_config: scan one pipeline config file with a pass/fail verdict.
 
 ## 1.2.0
 - Custom rule packs: load your own rules from `.plumber-rules.json` or a `rulesFile`, ids under `custom/`.

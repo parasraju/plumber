@@ -87,7 +87,7 @@ test('sarif output is SARIF 2.1.0 and keeps the plain-English fix', () => {
   assert.equal(sarif.$schema, 'https://json.schemastore.org/sarif-2.1.0.json');
   assert.equal(sarif.version, '2.1.0');
   assert.equal(driver.name, 'plumber-linter');
-    assert.equal(driver.version, '1.5.0');
+    assert.equal(driver.version, '1.6.0');
   assert.equal(driver.informationUri, 'https://github.com/parasraju/plumber');
   assert.equal(driver.rules.length, 36);
   assert.deepEqual(driver.rules.map((rule) => rule.id), RULE_LEVELS.map(([id]) => id));
@@ -136,4 +136,63 @@ test('a clean config produces SARIF with an empty results array', () => {
   assert.equal(sarif.version, '2.1.0');
   assert.equal(sarif.runs[0].tool.driver.rules.length, 36);
   assert.deepEqual(sarif.runs[0].results, []);
+});
+
+test('html report matches json severity counts and lists every finding', () => {
+  const report = JSON.parse(scanSample('json'));
+  const html = scanSample('html');
+  const counts = { CRITICAL: 0, HIGH: 0, MEDIUM: 0, LOW: 0 };
+  for (const issue of report.issues) counts[issue.severity] += 1;
+
+  assert.match(html, /^<!DOCTYPE html>/);
+  assert.match(html, /<html lang="en">/);
+  assert.match(html, /<\/html>\s*$/);
+  assert.match(html, /Scanned target: sample/);
+  assert.match(html, new RegExp(`Total findings: ${report.issues.length}`));
+  for (const [severity, count] of Object.entries(counts)) {
+    assert.match(html, new RegExp(`${severity}: ${count}`));
+  }
+  for (const issue of report.issues) {
+    assert.equal(html.includes(issue.rule_id), true);
+    assert.equal(html.includes(issue.title), true);
+    assert.equal(html.includes(issue.evidence), true);
+    assert.equal(html.includes(issue.fix), true);
+    assert.match(html, new RegExp(`ci\\.yml:${issue.line}`));
+  }
+  assert.equal(html.includes('<script'), false);
+  assert.equal(html.includes('<link'), false);
+  assert.equal(html.includes('@import'), false);
+  assert.equal(html.includes('url('), false);
+});
+
+test('html escapes markup in finding evidence and fix text', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'plumber-html-escape-'));
+  fs.writeFileSync(path.join(root, 'page.html'), '<div onclick="<script>alert(1)</script>"></div>\n', 'utf8');
+  try {
+    const html = run(['scan', root, '--format', 'html']);
+    assert.equal(html.includes('<script'), false);
+    assert.equal(html.includes('&lt;script&gt;alert(1)&lt;/script&gt;'), true);
+    assert.equal(html.includes('&quot;'), true);
+    assert.equal(html.includes('joint/clickable-div'), true);
+    assert.equal(html.includes('page.html:1'), true);
+    assert.equal(html.includes('Use a native &lt;button type=&quot;button&quot;&gt; instead.'), true);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('a clean config produces html that says the scan is clean', () => {
+  const html = run(['scan', cleanDir, '--format', 'html']);
+  assert.match(html, /^<!DOCTYPE html>/);
+  assert.match(html, /<\/html>\s*$/);
+  assert.match(html, /No findings\. This scan is clean\./);
+  assert.match(html, /Total findings: 0/);
+  for (const severity of ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW']) {
+    assert.match(html, new RegExp(`${severity}: 0`));
+  }
+  assert.equal(html.length > 0, true);
+  assert.equal(html.includes('<script'), false);
+  assert.equal(html.includes('<link'), false);
+  assert.equal(html.includes('@import'), false);
+  assert.equal(html.includes('url('), false);
 });

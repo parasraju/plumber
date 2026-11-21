@@ -86,6 +86,7 @@ const RULES = [
 ];
 
 const SEV_WEIGHT = { CRITICAL: 4, HIGH: 3, MEDIUM: 2, LOW: 1, INFO: 0 };
+const HTML_SEVERITIES = ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW'];
 const SARIF_SCHEMA = 'https://json.schemastore.org/sarif-2.1.0.json';
 const INFORMATION_URI = 'https://github.com/parasraju/plumber';
 const FULL_SHA = /^[0-9a-f]{40}$/i;
@@ -154,7 +155,7 @@ COMMANDS:
   mcp                     Run stdio Model Context Protocol (MCP) server for Claude / Cursor
 
 OPTIONS:
-  --format [pretty|json|md|sarif]  Output format (default: pretty)
+  --format [pretty|json|md|sarif|html]  Output format (default: pretty)
   --fail-on [critical|high|medium|low]  Exit code 1 if issues >= severity exist
 `);
 }
@@ -1384,6 +1385,113 @@ function buildSarif(report) {
   };
 }
 
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function htmlSeverityCounts(issues) {
+  const counts = { CRITICAL: 0, HIGH: 0, MEDIUM: 0, LOW: 0 };
+  for (const issue of issues) {
+    const severity = String(issue.severity || '').toUpperCase();
+    if (Object.prototype.hasOwnProperty.call(counts, severity)) counts[severity] += 1;
+  }
+  return counts;
+}
+
+function htmlSeverityClass(severity) {
+  const label = String(severity || '').toUpperCase();
+  return HTML_SEVERITIES.includes(label) ? `sev-${label}` : 'sev-other';
+}
+
+function renderHtmlFinding(issue, filePath) {
+  const severity = String(issue.severity || '');
+  const line = issue.line === undefined || issue.line === null ? '' : String(issue.line);
+  const loc = filePath ? `${filePath}:${line}` : line;
+  return [
+    '<article class="finding">',
+    `<p class="rule"><code>${escapeHtml(issue.rule_id)}</code> <span class="chip ${htmlSeverityClass(severity)}">${escapeHtml(severity)}</span></p>`,
+    `<h3>${escapeHtml(issue.title)}</h3>`,
+    `<p class="loc">${escapeHtml(loc)}</p>`,
+    `<pre class="evidence">${escapeHtml(issue.evidence)}</pre>`,
+    `<p class="fix">${escapeHtml(issue.fix)}</p>`,
+    '</article>'
+  ].join('\n');
+}
+
+function renderHtml(report) {
+  const issues = report.issues || [];
+  const counts = htmlSeverityCounts(issues);
+  const covered = new Set();
+  const sections = [];
+  for (const file of report.file_reports || []) {
+    const blocks = [];
+    for (const issue of file.issues || []) {
+      covered.add(issue);
+      blocks.push(renderHtmlFinding(issue, file.path || ''));
+    }
+    if (blocks.length > 0) {
+      sections.push(`<section>\n<h2>${escapeHtml(file.path || '')}</h2>\n${blocks.join('\n')}\n</section>`);
+    }
+  }
+  const leftover = [];
+  for (const issue of issues) {
+    if (!covered.has(issue)) leftover.push(renderHtmlFinding(issue, ''));
+  }
+  if (leftover.length > 0) {
+    sections.push(`<section>\n<h2>Findings without a file</h2>\n${leftover.join('\n')}\n</section>`);
+  }
+  const main = issues.length === 0
+    ? '<p class="clean">No findings. This scan is clean.</p>'
+    : sections.join('\n');
+  const countItems = HTML_SEVERITIES.map((severity) => `<li>${severity}: ${counts[severity]}</li>`).join('');
+  const target = escapeHtml(report.repo_name);
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Plumber scan report: ${target}</title>
+<style>
+body { margin: 0; padding: 24px; background: #f4f4f1; color: #1c1c1c; font-family: system-ui, sans-serif; line-height: 1.45; }
+h1 { font-size: 1.4rem; margin: 0 0 8px; }
+h2 { font-size: 1.05rem; margin: 0 0 12px; font-family: ui-monospace, monospace; }
+h3 { font-size: 1rem; margin: 0 0 8px; }
+header, section, article { background: #fff; border: 1px solid #d5d5d0; }
+header { padding: 16px 18px; margin-bottom: 16px; }
+section { padding: 16px 18px; margin-bottom: 16px; }
+article { padding: 12px 14px; margin: 0 0 12px; }
+article:last-child { margin-bottom: 0; }
+.counts { display: flex; gap: 12px; padding: 0; margin: 12px 0 0; list-style: none; }
+.chip { display: inline-block; padding: 1px 6px; border: 1px solid #1c1c1c; font-size: 0.75rem; letter-spacing: 0.03em; }
+.sev-CRITICAL { background: #3f1d1d; color: #fff; border-color: #3f1d1d; }
+.sev-HIGH { background: #6b3a12; color: #fff; border-color: #6b3a12; }
+.sev-MEDIUM { background: #5c4a12; color: #fff; border-color: #5c4a12; }
+.sev-LOW { background: #3a3a3a; color: #fff; border-color: #3a3a3a; }
+.sev-other { background: #fff; color: #1c1c1c; }
+pre.evidence { font-family: ui-monospace, monospace; background: #f4f4f1; border: 1px solid #d5d5d0; padding: 8px 10px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.fix { margin: 8px 0 0; }
+.clean { margin: 0; }
+</style>
+</head>
+<body>
+<header>
+<h1>Plumber scan report</h1>
+<p>Scanned target: ${target}</p>
+<p>Total findings: ${issues.length}</p>
+<ul class="counts">${countItems}</ul>
+</header>
+<main>
+${main}
+</main>
+</body>
+</html>`;
+}
+
 function renderReport(report, fmt, failOn) {
   if (fmt === 'json') {
     console.log(JSON.stringify(report, null, 2));
@@ -1398,6 +1506,8 @@ function renderReport(report, fmt, failOn) {
     }
   } else if (fmt === 'sarif') {
     console.log(JSON.stringify(buildSarif(report), null, 2));
+  } else if (fmt === 'html') {
+    console.log(renderHtml(report));
   } else {
     console.log('\n' + '='.repeat(64));
     console.log(`  PLUMBER INSPECTION REPORT: ${report.repo_name}`);

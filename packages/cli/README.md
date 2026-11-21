@@ -1,6 +1,6 @@
 # Plumber
 
-CI/CD pipeline linter that flags hardcoded secrets, leaked credentials, and dead code — with fixes in plain English, plus SARIF output for GitHub code scanning, workflow YAML scanning for GitHub Actions, and GitLab CI rules for .gitlab-ci.yml.
+CI/CD pipeline linter that flags hardcoded secrets, leaked credentials, and dead code — with fixes in plain English, plus SARIF output for GitHub code scanning, workflow YAML scanning for GitHub Actions, GitLab CI rules for .gitlab-ci.yml, and a shareable HTML report.
 
 [![npm version](https://img.shields.io/npm/v/plumber-linter.svg)](https://www.npmjs.com/package/plumber-linter)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://github.com/parasraju/plumber/blob/main/LICENSE)
@@ -35,10 +35,11 @@ npx plumber-linter scan .
 # Enforce quality gate in CI (exit 1 on HIGH or CRITICAL issues)
 npx plumber-linter scan . --fail-on high
 
-# Export report as Markdown, JSON, or SARIF 2.1.0
+# Export report as Markdown, JSON, SARIF 2.1.0, or HTML
 npx plumber-linter scan . --format md
 npx plumber-linter scan . --format json
 npx plumber-linter scan . --format sarif
+npx plumber-linter scan . --format html
 
 # View all 36 inspection rules
 npx plumber-linter rules
@@ -74,7 +75,7 @@ npx plumber-linter uninstall-hook
 
 ### SARIF output for GitHub code scanning
 
-`plumber scan . --format sarif` writes SARIF 2.1.0 JSON to stdout. The file contains one run for `plumber-linter` 1.5.0, every inspection rule (id, name, description, and the plain-English fix in `help.text`), and one result per finding. Each result's `message.text` repeats that finding's explanation and fix. Paths are relative to the scanned directory, and the line is included when the engine recorded one.
+`plumber scan . --format sarif` writes SARIF 2.1.0 JSON to stdout. The file contains one run for `plumber-linter` 1.6.0, every inspection rule (id, name, description, and the plain-English fix in `help.text`), and one result per finding. Each result's `message.text` repeats that finding's explanation and fix. Paths are relative to the scanned directory, and the line is included when the engine recorded one.
 
 ```bash
 npx plumber-linter scan . --format sarif > results.sarif
@@ -103,6 +104,16 @@ jobs:
         with:
           sarif_file: results.sarif
 ```
+
+### HTML report — shareable scan results
+
+`npx plumber-linter scan . --format html` writes a standalone html report to stdout. Redirect it to a file when you want to keep it.
+
+```bash
+npx plumber-linter scan . --format html > report.html
+```
+
+The scan report lists the scanned target, the total findings, and the counts for CRITICAL, HIGH, MEDIUM, and LOW. Each finding shows the rule id, the severity, the file and line, the evidence, and the plain-English fix. Open `report.html` in a browser, or attach that file to a PR review. The page uses inline CSS only, so it still opens offline.
 
 ### Workflow YAML scanning — scan .github/workflows/*.yml
 
@@ -322,6 +333,9 @@ Spots hallucinated library imports invented by LLMs or packages missing from pro
 ---
 
 ## Changelog
+
+## 1.6.0
+HTML report output (`--format html`) — standalone, shareable scan report with severity counts and plain-English fixes.
 
 ## 1.5.0
 GitLab CI rules pack — 5 new rules for .gitlab-ci.yml (unpinned includes, artifact secrets, shared cache, allow-failure gates, unprotected deploys).

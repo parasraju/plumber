@@ -125,13 +125,14 @@ function ids(result) {
 
 test('tools/list adds only plumber_scan_config and list_rules stays on the 26 built-ins', async () => {
   await withClient(undefined, async (client) => {
-    assert.deepEqual(client.getServerVersion(), { name: 'plumber-mcp', version: '1.3.0' });
+    assert.deepEqual(client.getServerVersion(), { name: 'plumber-mcp', version: '1.4.0' });
     const listed = await client.listTools();
     assert.deepEqual(listed.tools.map((tool) => tool.name), [
       'plumber_scan',
       'plumber_list_rules',
       'plumber_scan_text',
-      'plumber_scan_config'
+      'plumber_scan_config',
+      'plumber_fix'
     ]);
     for (const tool of listed.tools.slice(0, 3)) {
       assert.equal(tool.inputSchema.properties.configPath, undefined, tool.name);

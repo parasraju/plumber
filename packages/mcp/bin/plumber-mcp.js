@@ -8,6 +8,7 @@
  *   plumber_list_rules    list every inspection rule
  *   plumber_scan_text     scan a pasted snippet
  *   plumber_scan_config   pass/fail verdict for one pipeline config
+ *   plumber_fix           pin actions to caller-supplied SHAs and return the text
  *
  * Each tool accepts an optional rulesFile path to one local JSON rule pack.
  * plumber_scan also reads .plumber-rules.json in the target when rulesFile is omitted.
@@ -26,7 +27,7 @@ const {
   ErrorCode,
   McpError
 } = require('@modelcontextprotocol/sdk/types.js');
-const { RULES, SCANNABLE_EXTS, scanLocalDirectory, scanText, scanConfig, loadRulePack, resolveScanPack } = require('../src/engine.js');
+const { RULES, SCANNABLE_EXTS, scanLocalDirectory, scanText, scanConfig, fixConfig, loadRulePack, resolveScanPack } = require('../src/engine.js');
 
 // v1.0.1 fix: read the version from package.json so serverInfo never drifts.
 // Repro (v1.0.0): initialize -> serverInfo.version was hardcoded to "1.0.0".
@@ -88,6 +89,29 @@ const TOOLS = [
           type: 'string',
           enum: ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW'],
           description: 'Verdict fails at this severity or higher: CRITICAL, HIGH, MEDIUM, or LOW (default HIGH).'
+        }
+      },
+      additionalProperties: false
+    }
+  },
+  {
+    name: 'plumber_fix',
+    description: 'Pin unpinned GitHub Actions to caller-supplied SHAs and return the fixed config text.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        configPath: { type: 'string', description: 'Path to one local pipeline config file. Provide this or configText, not both. URLs are rejected.' },
+        configText: { type: 'string', description: 'Pasted pipeline config. Provide this or configPath, not both.' },
+        configType: {
+          type: 'string',
+          enum: ['github-actions', 'gitlab-ci', 'dockerfile', 'auto'],
+          description: 'Config type. One of github-actions, gitlab-ci, dockerfile, or auto (default auto).'
+        },
+        rulesFile: { type: 'string', description: 'Optional path to a local JSON rule pack. When omitted and configPath is set, .plumber-rules.json is loaded from the directory that contains that file if it exists. Pasted configText does not auto-load a pack.' },
+        pins: {
+          type: 'object',
+          description: 'Map from an exact uses: reference, such as example/deploy@v1, to a 40-character lowercase hex commit SHA. The tool never fetches or invents a SHA.',
+          additionalProperties: { type: 'string' }
         }
       },
       additionalProperties: false
@@ -329,6 +353,59 @@ function runScanConfigTool(args) {
   return JSON.stringify(result, null, 2);
 }
 
+const PIN_SHA = /^[0-9a-f]{40}$/;
+
+function readPins(value) {
+  if (value === undefined) return undefined;
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+    throw new McpError(ErrorCode.InvalidParams, "'pins' must be an object");
+  }
+  const pins = {};
+  const keys = Object.keys(value);
+  for (let i = 0; i < keys.length; i++) {
+    const key = keys[i];
+    const sha = value[key];
+    if (typeof sha !== 'string' || !PIN_SHA.test(sha)) {
+      throw new McpError(ErrorCode.InvalidParams, `'pins' value for '${key}' must be a 40-character lowercase hex SHA`);
+    }
+    pins[key] = sha;
+  }
+  return pins;
+}
+
+function runFixTool(args) {
+  const hasPath = args.configPath !== undefined;
+  const hasText = args.configText !== undefined;
+  if (!hasPath && !hasText) {
+    throw new McpError(ErrorCode.InvalidParams, "Provide 'configPath' or 'configText'.");
+  }
+  if (hasPath && hasText) {
+    throw new McpError(ErrorCode.InvalidParams, "Provide 'configPath' or 'configText', not both.");
+  }
+  const configPath = hasPath ? requireString(args.configPath, 'configPath') : undefined;
+  const configText = hasText ? requireNamedText(args.configText, 'configText') : undefined;
+  const configType = readChoice(args.configType, 'configType', CONFIG_TYPES);
+  const rulesFile = requireString(args.rulesFile, 'rulesFile');
+  const pins = readPins(args.pins);
+  const text = configPath ? readConfigFile(configPath) : configText;
+  const pack = loadConfigPack(configPath, rulesFile);
+  let result;
+  try {
+    result = fixConfig(text, configPath, {
+      configType: configType,
+      pack: pack || undefined,
+      pins: pins
+    });
+  } catch (err) {
+    if (err instanceof McpError) throw err;
+    if (err instanceof TypeError) {
+      throw new McpError(ErrorCode.InvalidParams, err.message);
+    }
+    throw new McpError(ErrorCode.InternalError, `Fix failed: ${err.message}`);
+  }
+  return JSON.stringify(result, null, 2);
+}
+
 function runListRulesTool(args) {
   const rulesFile = requireString(args && args.rulesFile, 'rulesFile');
   let pack = null;
@@ -375,6 +452,8 @@ async function main() {
       text = runScanTextTool(args);
     } else if (name === 'plumber_scan_config') {
       text = runScanConfigTool(args);
+    } else if (name === 'plumber_fix') {
+      text = runFixTool(args);
     } else {
       throw new McpError(ErrorCode.MethodNotFound, `Unknown tool: ${name}`);
     }

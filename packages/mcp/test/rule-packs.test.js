@@ -74,9 +74,9 @@ function packFile(root, name, body) {
   return full;
 }
 
-test('package metadata is 1.3.0 and still has only the two runtime dependencies', () => {
+test('package metadata is 1.4.0 and still has only the two runtime dependencies', () => {
   const pkg = require('../package.json');
-  assert.equal(pkg.version, '1.3.0');
+  assert.equal(pkg.version, '1.4.0');
   assert.equal(
     pkg.description,
     'Plumber as an MCP server — let your AI coding agent scan repos and GitHub Actions workflows for leaked secrets, dead code, and AI slop, with fixes in plain English. Add your own checks with custom rule packs. Check one pipeline config before you commit it.'
@@ -99,7 +99,9 @@ test('package metadata is 1.3.0 and still has only the two runtime dependencies'
     'custom-rules',
     'rule-packs',
     'config-scan',
-    'ci-gate'
+    'ci-gate',
+    'auto-fix',
+    'plumber-fix'
   ]);
   assert.deepEqual(pkg.files, ['bin', 'src', 'examples', 'README.md']);
   assert.deepEqual(Object.keys(pkg.dependencies).sort(), ['@modelcontextprotocol/sdk', 'js-yaml']);
@@ -418,8 +420,8 @@ test('mcp tools accept optional rulesFile and apply, list, and reject packs', { 
   await client.connect(transport);
   try {
     const listed = await client.listTools();
-    assert.deepEqual(listed.tools.map((tool) => tool.name), ['plumber_scan', 'plumber_list_rules', 'plumber_scan_text', 'plumber_scan_config']);
-    assert.equal(listed.tools.length, 4);
+    assert.deepEqual(listed.tools.map((tool) => tool.name), ['plumber_scan', 'plumber_list_rules', 'plumber_scan_text', 'plumber_scan_config', 'plumber_fix']);
+    assert.equal(listed.tools.length, 5);
     for (const tool of listed.tools) {
       assert.equal(typeof tool.inputSchema.properties.rulesFile, 'object');
       assert.equal(tool.inputSchema.properties.rulesFile.type, 'string');

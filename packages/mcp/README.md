@@ -87,6 +87,7 @@ Add to `.vscode/mcp.json`:
 | `plumber_list_rules` | List all 26 inspection rules with id, severity, title, and fix. Optional `rulesFile` appends pack rules marked `source: pack`. |
 | `plumber_scan_text` | Scan a pasted code or config snippet. `filename` is optional and only selects the applicable rules. Optional `rulesFile` adds a rule pack. |
 | `plumber_scan_config` | Scan one pipeline config, from a path or pasted text, and return a pass/fail verdict at `failOn` (default `HIGH`) with findings and severity counts. |
+| `plumber_fix` | Pin unpinned actions to the SHAs you pass and return the fixed config text. Other findings are reported and left unchanged. |
 
 Tool inputs are deliberately small so they cost few tokens:
 
@@ -94,6 +95,7 @@ Tool inputs are deliberately small so they cost few tokens:
 - `plumber_list_rules`: `rulesFile` (string, optional)
 - `plumber_scan_text`: `text` (string, required), `filename` (string, optional), `rulesFile` (string, optional)
 - `plumber_scan_config`: `configPath` or `configText` (string, exactly one), `configType` (string, optional, default `auto`), `rulesFile` (string, optional), `failOn` (string, optional, default `HIGH`)
+- `plumber_fix`: `configPath` or `configText` (string, exactly one), `configType` (string, optional, default `auto`), `rulesFile` (string, optional), `pins` (object, optional)
 
 ### Scan one config — plumber_scan_config
 
@@ -143,6 +145,48 @@ Tool inputs are deliberately small so they cost few tokens:
 ```
 
 > **Agent:** The verdict is fail. I will not commit `.github/workflows/pr.yml`. The untrusted checkout is `sec/pull-request-target`: Use pull_request, or check out the base ref read-only with no secrets. The unpinned action is `pipe/action-unpinned`: Pin the action to a full commit SHA.
+
+### Fix it for me — plumber_fix
+
+`plumber_scan_config` reports the verdict. `plumber_fix` returns the fixed config, and you decide whether to write that text back. Pass `configPath` or `configText`. Pass exactly one of them.
+
+This auto-fix rewrites only a `uses:` line whose SHA you already have. Pass that SHA in `pins`. The tool does not fetch a SHA, and it does not invent one. Intent-changing and value-inventing fixes are reported, not applied. The tool does not write the file.
+
+The result contains `fixedText`, `appliedFixes`, `remainingFindings`, `unusedPins`, and counts for applied and remaining. `fixedText` is the whole config. Each applied fix has the rule id, the line, the line before the edit, and the line after it. Each remaining finding has the rule id, the severity, the line, the plain-English fix, and the reason the line was left alone.
+
+`pins` maps the `uses:` reference as it is written, such as `example/deploy@v1`, to a 40-character lowercase hex SHA. A value in any other form is an error, and the error names the key. A key that matches no `uses:` line is listed in `unusedPins`.
+
+> **Agent:** *(calls `plumber_fix` with `{ "configPath": ".github/workflows/release.yml", "pins": { "example/deploy@v1": "0000000000000000000000000000000000000000" } }` on a workflow that checks out pull request code from `pull_request_target` and uses `example/deploy@v1`)*
+
+```json
+{
+  "fixedText": "name: release\non: pull_request_target\njobs:\n  build:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v4\n        with:\n          ref: ${{ github.event.pull_request.head.sha }}\n      - uses: example/deploy@0000000000000000000000000000000000000000 # v1\n",
+  "appliedFixes": [
+    {
+      "rule_id": "pipe/action-unpinned",
+      "line": 10,
+      "before": "      - uses: example/deploy@v1",
+      "after": "      - uses: example/deploy@0000000000000000000000000000000000000000 # v1"
+    }
+  ],
+  "remainingFindings": [
+    {
+      "rule_id": "sec/pull-request-target",
+      "severity": "CRITICAL",
+      "line": 9,
+      "fix": "Use pull_request, or check out the base ref read-only with no secrets.",
+      "reason": "Not auto-fixed: changing this would rewrite the workflow intent."
+    }
+  ],
+  "unusedPins": [],
+  "counts": {
+    "applied": 1,
+    "remaining": 1
+  }
+}
+```
+
+> **Agent:** The deploy step is now `example/deploy@0000000000000000000000000000000000000000 # v1`. I left the `pull_request_target` trigger in place. The remaining finding says to use pull_request, or check out the base ref read-only with no secrets.
 
 ## Example session
 
@@ -250,6 +294,9 @@ The secret-format rule above does not check Python files. The banned-marker rule
 - MCP TypeScript SDK: [github.com/modelcontextprotocol/typescript-sdk](https://github.com/modelcontextprotocol/typescript-sdk)
 
 ## Changelog
+
+## 1.4.0
+New tool plumber_fix: pins actions to the SHAs you pass and returns the fixed config text; everything else is reported, not changed.
 
 ## 1.3.0
 New tool plumber_scan_config: scan one pipeline config file with a pass/fail verdict.

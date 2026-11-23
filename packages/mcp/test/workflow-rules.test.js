@@ -566,10 +566,10 @@ test('mcp server speaks stdio and keeps the original three tool schemas', async 
   const client = new Client({ name: 'plumber-mcp-test', version: '1.1.0' }, { capabilities: {} });
   await client.connect(transport);
   try {
-    assert.deepEqual(client.getServerVersion(), { name: 'plumber-mcp', version: '1.3.0' });
+    assert.deepEqual(client.getServerVersion(), { name: 'plumber-mcp', version: '1.4.0' });
     const listed = await client.listTools();
-    assert.deepEqual(listed.tools.map((tool) => tool.name), ['plumber_scan', 'plumber_list_rules', 'plumber_scan_text', 'plumber_scan_config']);
-    assert.equal(listed.tools.length, 4);
+    assert.deepEqual(listed.tools.map((tool) => tool.name), ['plumber_scan', 'plumber_list_rules', 'plumber_scan_text', 'plumber_scan_config', 'plumber_fix']);
+    assert.equal(listed.tools.length, 5);
     assert.deepEqual(listed.tools[0].inputSchema, {
       type: 'object',
       properties: {

@@ -1233,6 +1233,198 @@ function resolveScanPack(targetPath, rulesFile) {
   return loadRulePack(candidate);
 }
 
+const PIN_RULE = 'pipe/action-unpinned';
+const NO_SHA_REASON = 'no SHA supplied — pass one in `pins`';
+
+const REMAINING_REASONS = {
+  'sec/pull-request-target': 'Not auto-fixed: changing this would rewrite the workflow intent.',
+  'sec/expression-injection': 'Not auto-fixed: the fix needs an env binding the config does not name.',
+  'sec/job-permissions': 'Not auto-fixed: the permission set is a choice the config does not determine.',
+  'sec/secret-to-untrusted': 'Not auto-fixed: secret values are left untouched.',
+  'leak/api-key': 'Not auto-fixed: secret values are left untouched.',
+  'leak/hardcoded-secret': 'Not auto-fixed: secret values are left untouched.',
+  'leak/committed-env': 'Not auto-fixed: secret values are left untouched.'
+};
+
+function remainingReason(finding, githubActions) {
+  const ruleId = finding.rule_id || '';
+  if (finding.source === 'pack' || ruleId.indexOf('custom/') === 0) {
+    return 'Not auto-fixed: custom pack findings are reported, not applied.';
+  }
+  if (ruleId === PIN_RULE) {
+    if (!githubActions) return 'Not auto-fixed: pins apply only to GitHub Actions configs.';
+    return NO_SHA_REASON;
+  }
+  if (Object.prototype.hasOwnProperty.call(REMAINING_REASONS, ruleId)) {
+    return REMAINING_REASONS[ruleId];
+  }
+  return 'Not auto-fixed: only a caller-supplied pin on an unpinned action is applied.';
+}
+
+function splitKeepingBreaks(text) {
+  const lines = [];
+  const breaks = [];
+  const re = /\r\n|\n|\r/g;
+  let last = 0;
+  let match;
+  while ((match = re.exec(text)) !== null) {
+    lines.push(text.slice(last, match.index));
+    breaks.push(match[0]);
+    last = match.index + match[0].length;
+  }
+  lines.push(text.slice(last));
+  return { lines: lines, breaks: breaks };
+}
+
+function joinKeepingBreaks(lines, breaks) {
+  let out = '';
+  for (let i = 0; i < lines.length; i++) {
+    out += lines[i];
+    if (i < breaks.length) out += breaks[i];
+  }
+  return out;
+}
+
+function usesSpecOnLine(line) {
+  const match = /^[ \t]*(?:-[ \t]+)?uses[ \t]*:[ \t]*(.*)$/.exec(line);
+  if (!match) return null;
+  const raw = match[1];
+  const quoted = /^(['"])([\s\S]*?)\1/.exec(raw);
+  if (quoted) return quoted[2];
+  const hash = raw.indexOf('#');
+  const value = (hash === -1 ? raw : raw.slice(0, hash)).trim();
+  return value || null;
+}
+
+function findSpec(line, spec) {
+  let from = 0;
+  while (from < line.length) {
+    const idx = line.indexOf(spec, from);
+    if (idx === -1) return -1;
+    const after = line.charAt(idx + spec.length);
+    if (after === '' || after === '"' || after === "'" || after === ' ' || after === '\t' || after === '#') {
+      return idx;
+    }
+    from = idx + spec.length;
+  }
+  return -1;
+}
+
+function rewriteUsesLine(line, spec, sha) {
+  const idx = findSpec(line, spec);
+  if (idx === -1) return null;
+  const at = spec.lastIndexOf('@');
+  const name = at === -1 ? spec : spec.slice(0, at);
+  const ref = at === -1 ? '' : spec.slice(at + 1);
+  const pinned = name + '@' + sha;
+  let updated = line.slice(0, idx) + pinned + line.slice(idx + spec.length);
+  if (ref) {
+    let pos = idx + pinned.length;
+    const closer = updated.charAt(pos);
+    if (closer === '"' || closer === "'") pos += 1;
+    updated = updated.slice(0, pos) + ' # ' + ref + updated.slice(pos);
+  }
+  return { line: updated, written: pinned };
+}
+
+function toRemaining(finding, githubActions) {
+  return {
+    rule_id: finding.rule_id,
+    severity: finding.severity,
+    line: finding.line,
+    fix: finding.fix,
+    reason: remainingReason(finding, githubActions)
+  };
+}
+
+function fixConfig(text, filename, options) {
+  if (typeof text !== 'string') {
+    throw new TypeError('text must be a string');
+  }
+  const opts = options || {};
+  const pins = opts.pins && typeof opts.pins === 'object' && !Array.isArray(opts.pins) ? opts.pins : {};
+  const scanned = scanConfig(text, filename, {
+    configType: opts.configType,
+    pack: opts.pack || undefined
+  });
+  const githubActions = scanned.configType === 'github-actions';
+  const parts = splitKeepingBreaks(text);
+  const lines = parts.lines.slice();
+  const appliedFixes = [];
+  const remainingFindings = [];
+  const used = new Set();
+  const written = new Set();
+  const replaced = new Set();
+  const editedLines = new Set();
+
+  for (let i = 0; i < scanned.findings.length; i++) {
+    const finding = scanned.findings[i];
+    const lineIndex = finding.line - 1;
+    if (githubActions && finding.rule_id === PIN_RULE && !editedLines.has(lineIndex)) {
+      const source = lines[lineIndex];
+      const spec = source === undefined ? null : usesSpecOnLine(source);
+      const sha = spec && Object.prototype.hasOwnProperty.call(pins, spec) ? pins[spec] : undefined;
+      if (typeof sha === 'string') {
+        const rewritten = rewriteUsesLine(source, spec, sha);
+        if (rewritten) {
+          lines[lineIndex] = rewritten.line;
+          editedLines.add(lineIndex);
+          used.add(spec);
+          written.add(rewritten.written);
+          replaced.add(spec);
+          appliedFixes.push({
+            rule_id: finding.rule_id,
+            line: finding.line,
+            before: source,
+            after: rewritten.line
+          });
+          continue;
+        }
+      }
+    }
+    remainingFindings.push(toRemaining(finding, githubActions));
+  }
+
+  const unusedPins = [];
+  const pinKeys = Object.keys(pins);
+  for (let i = 0; i < pinKeys.length; i++) {
+    if (!used.has(pinKeys[i])) unusedPins.push(pinKeys[i]);
+  }
+
+  const fixedText = appliedFixes.length === 0 ? text : joinKeepingBreaks(lines, parts.breaks);
+  if (appliedFixes.length > 0) {
+    try {
+      yaml.load(fixedText, { schema: yaml.DEFAULT_SCHEMA });
+    } catch (err) {
+      throw new Error('Fixed config is not valid YAML: ' + err.message);
+    }
+    const check = scanConfig(fixedText, filename, {
+      configType: opts.configType,
+      pack: opts.pack || undefined
+    });
+    const checkParts = splitKeepingBreaks(fixedText);
+    for (let i = 0; i < check.findings.length; i++) {
+      const finding = check.findings[i];
+      if (finding.rule_id !== PIN_RULE) continue;
+      const spec = usesSpecOnLine(checkParts.lines[finding.line - 1] || '');
+      if (spec && (written.has(spec) || replaced.has(spec))) {
+        throw new Error('Pinned action is still flagged by pipe/action-unpinned: ' + spec);
+      }
+    }
+  }
+
+  return {
+    fixedText: fixedText,
+    appliedFixes: appliedFixes,
+    remainingFindings: remainingFindings,
+    unusedPins: unusedPins,
+    counts: {
+      applied: appliedFixes.length,
+      remaining: remainingFindings.length
+    }
+  };
+}
+
 module.exports = {
   RULES,
   SEV_WEIGHT,
@@ -1240,6 +1432,7 @@ module.exports = {
   scanLocalDirectory,
   scanText,
   scanConfig,
+  fixConfig,
   loadRulePack,
   resolveScanPack
 };

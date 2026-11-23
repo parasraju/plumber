@@ -334,6 +334,9 @@ Spots hallucinated library imports invented by LLMs or packages missing from pro
 
 ## Changelog
 
+## 1.6.1
+Shorter npm description so it shows in full (no code changes).
+
 ## 1.6.0
 HTML report output (`--format html`) — standalone, shareable scan report with severity counts and plain-English fixes.
 

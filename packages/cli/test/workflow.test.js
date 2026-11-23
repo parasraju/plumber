@@ -297,7 +297,7 @@ test('sarif lists the workflow rules and one result per workflow finding', () =>
     assert.equal(sarif.version, '2.1.0');
     const driver = sarif.runs[0].tool.driver;
     assert.equal(driver.name, 'plumber-linter');
-    assert.equal(driver.version, '1.6.0');
+    assert.equal(driver.version, '1.6.1');
     const ruleIds = driver.rules.map((rule) => rule.id);
     for (const [id] of WORKFLOW_RULES) {
       assert.equal(ruleIds.includes(id), true);

@@ -87,7 +87,7 @@ test('sarif output is SARIF 2.1.0 and keeps the plain-English fix', () => {
   assert.equal(sarif.$schema, 'https://json.schemastore.org/sarif-2.1.0.json');
   assert.equal(sarif.version, '2.1.0');
   assert.equal(driver.name, 'plumber-linter');
-    assert.equal(driver.version, '1.6.0');
+    assert.equal(driver.version, '1.6.1');
   assert.equal(driver.informationUri, 'https://github.com/parasraju/plumber');
   assert.equal(driver.rules.length, 36);
   assert.deepEqual(driver.rules.map((rule) => rule.id), RULE_LEVELS.map(([id]) => id));
